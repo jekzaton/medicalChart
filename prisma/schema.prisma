@@ -1,0 +1,60 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Get a free hosted Postgres database in seconds: `npx create-db`
+
+generator client {
+  provider = "prisma-client-js"
+  // output   = "../src/generated/prisma" // จะใช้หรือไม่ใช้ก็ได้
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+model user {
+  id        Int      @id @default(autoincrement())
+  username  String   @unique
+  password  String
+  prefix    String
+  firstname String
+  lastname  String
+  cid       String   @unique
+  role      String   @default("user")
+  active    Boolean? @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model doctor {
+  id          Int      @id @default(autoincrement())
+  doctorId    String   @unique
+  name        String
+  cid         String   @unique
+  license     String
+  active      Boolean? @default(true)
+  line_active Boolean? @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @default(now()) @updatedAt
+}
+
+enum ChartStatus {
+  SUCCESS @map("success")
+  WARNING @map("warning")
+}
+
+model medical_chart {
+  id           Int         @id @default(autoincrement())
+  hn           String      @unique
+  an           String
+  fullname     String
+  regdate      DateTime
+  dchdate      DateTime
+  doctor_code  String
+  ward_name    String // ชื่อวอร์ด
+  num_date     Int         @default(0)
+  status_chart ChartStatus @default(WARNING)
+  created_at   DateTime    @default(now())
+  updated_at   DateTime    @updatedAt
+}

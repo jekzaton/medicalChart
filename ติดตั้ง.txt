@@ -1,0 +1,21 @@
+npm install prisma@5 @prisma/client@5
+**** เริ่ม project prisma
+npx prisma init
+
+ถ้าคุณมี DB อยู่แล้ว ให้ใช้:
+npx prisma db pull
+
+**** สร้างตารางใน MySQL
+npx prisma generate
+npx prisma migrate dev --name init
+
+npx prisma migrate reset
+rm -rf prisma/migrations
+
+
+npm install react-hook-form zod @hookform/resolvers react-hot-toast bcrypt
+npm install --save-dev @types/bcrypt
+npm install jsonwebtoken bcrypt xlsx
+npm install -D @types/jsonwebtoken
+npm install @tanstack/react-query
+npm install @tanstack/react-query-devtools
