@@ -82,9 +82,20 @@ const navItems: NavItem[] = [
   },
   {
     icon: <DocsIcon />,
-    name: "Patient Details",
-    path: "/admin/medical-chart",
+    name: "Patient",
     roles: ["admin", "user"],
+    subItems: [
+      {
+        name: "Patient Details",
+        path: "/admin/medical-chart",
+        roles: ["admin", "user"],
+      },
+      {
+        name: "Patient Doctor",
+        path: "/admin/doctor-chart",
+        roles: ["admin"],
+      },
+    ],
   },
 ];
 
