@@ -13,6 +13,11 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+enum UserRole {
+  admin
+  user
+}
+
 model user {
   id        Int      @id @default(autoincrement())
   username  String   @unique
@@ -21,7 +26,7 @@ model user {
   firstname String
   lastname  String
   cid       String   @unique
-  role      String   @default("user")
+  role      UserRole @default(user)
   active    Boolean? @default(true)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -46,8 +51,8 @@ enum ChartStatus {
 
 model medical_chart {
   id           Int         @id @default(autoincrement())
-  hn           String      @unique
-  an           String
+  hn           String?
+  an           String      @unique
   fullname     String
   regdate      DateTime
   dchdate      DateTime

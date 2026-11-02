@@ -1,0 +1,19 @@
+# Environment variables declared in this file are NOT automatically loaded by Prisma.
+# Please add `import "dotenv/config";` to your `prisma.config.ts` file, or use the Prisma CLI with Bun
+# to load environment variables from .env files: https://pris.ly/prisma-config-env-vars.
+
+# Prisma supports the native connection string format for PostgreSQL, MySQL, SQLite, SQL Server, MongoDB and CockroachDB.
+# See the documentation for all the connection string options: https://pris.ly/d/connection-strings
+
+# The following `prisma+postgres` URL is similar to the URL produced by running a local Prisma Postgres
+# server with the `prisma dev` CLI command, when not choosing any non-default ports or settings. The API key, unlike the
+# one found in a remote Prisma Postgres URL, does not contain any sensitive information.
+
+DATABASE_URL="mysql://yth:H%40s11081@172.16.101.34:3306/medical_yth_db"
+JWT_SECRET="TonDev-YTH2026-medical"
+
+NEXT_PUBLIC_API="http://172.16.101.34:3003"
+
+MOPH_ALERT_API_URL="https://morpromt2c.moph.go.th/alert/v3.1/messages"
+CLIENT_KEY="8f6edcfc92fb9ebaa9241ecf69a90185f4d1c33b"
+SECRET_KEY="DNNXKHILSPUHZARNC2FCI7PEUQPA"

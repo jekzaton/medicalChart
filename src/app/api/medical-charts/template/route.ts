@@ -13,7 +13,6 @@ export async function GET() {
       dchdate: "05/01/2567",
       doctor_code: "D001",
       ward_name: "อายุรกรรม",
-      num_date: 4,
       status_chart: "warning",
     },
   ];

@@ -81,10 +81,38 @@ export default function EditDoctor() {
     }
   };
 
+  // useEffect(() => {
+  //   if (id) fetchDoctor();
+  //   // eslint-disable-next-line react-hooks/exhaustive-deps
+  // }, [id]);
   useEffect(() => {
-    if (id) fetchDoctor();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    const fetchDoctor = async () => {
+      if (!id) return;
+
+      try {
+        setLoading(true);
+        const res = await axios.get(`/api/doctors/${id}`);
+        if (res.data?.doctor) {
+          setForm({
+            doctorId: res.data.doctor.doctorId,
+            name: res.data.doctor.name,
+            license: res.data.doctor.license,
+            cid: res.data.doctor.cid,
+            active: res.data.doctor.active,
+            line_active: res.data.doctor.line_active,
+          });
+        }
+      } catch (err) {
+        console.error(err);
+        toast.error("โหลดข้อมูลแพทย์ไม่สำเร็จ");
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchDoctor();
   }, [id]);
+
 
   const handleChange = (event: ChangeEvent<HTMLInputElement>) => {
     const { name, value, type, checked } = event.target;
@@ -100,16 +128,18 @@ export default function EditDoctor() {
     setForm((prev) => ({ ...prev, cid: value }));
   };
 
-  const toggleField = (field: "active" | "line_active") => {
-    if (field === "line_active" && !form.cid) {
-      toast.warning("กรุณากรอก CID ก่อนเปิดรับ LINE");
-      return;
-    }
 
-    setForm((prev) => ({
-      ...prev,
-      [field]: !prev[field],
-    }));
+  const toggleField = (field: 'active' | 'line_active') => {
+    setForm(prev => {
+      const newState = { ...prev, [field]: !prev[field] };
+
+      // ถ้า active ถูกปิด ต้องปิด line_active อัตโนมัติ
+      if (field === 'active' && !newState.active) {
+        newState.line_active = false;
+      }
+
+      return newState;
+    });
   };
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
@@ -140,7 +170,7 @@ export default function EditDoctor() {
     try {
       setSaving(true);
 
-      await axios.put(`/api/doctors/${id}`, {
+      await axios.patch(`/api/doctors/${id}`, {
         doctorId: form.doctorId.trim(),
         name: form.name.trim(),
         cid: form.cid.trim(),
@@ -195,6 +225,8 @@ export default function EditDoctor() {
       </div>
     );
   }
+
+
 
   return (
     <div className="w-full text-slate-900 transition-colors dark:text-slate-100">
@@ -287,11 +319,10 @@ export default function EditDoctor() {
                   />
                 </div>
                 <p
-                  className={`mt-2 text-xs font-bold ${
-                    form.cid.length === 13
-                      ? "text-emerald-600 dark:text-emerald-400"
-                      : "text-slate-400 dark:text-slate-500"
-                  }`}
+                  className={`mt-2 text-xs font-bold ${form.cid.length === 13
+                    ? "text-emerald-600 dark:text-emerald-400"
+                    : "text-slate-400 dark:text-slate-500"
+                    }`}
                 >
                   {form.cid.length}/13 หลัก
                 </p>
@@ -342,7 +373,7 @@ export default function EditDoctor() {
                   title="เปิดใช้งานแพทย์"
                   description="ใช้สำหรับแสดงและใช้งานแพทย์ในระบบ"
                   checked={form.active}
-                  onClick={() => toggleField("active")}
+                  onClick={() => toggleField('active')}
                   activeLabel="เปิดใช้งาน"
                   inactiveLabel="ปิดใช้งาน"
                   iconOn={<BadgeCheck size={20} />}
@@ -355,8 +386,8 @@ export default function EditDoctor() {
                   title="รับแจ้งเตือน LINE"
                   description="ใช้สำหรับส่งสรุปชาร์ตไปยัง CID ของแพทย์"
                   checked={form.line_active}
-                  onClick={() => toggleField("line_active")}
-                  disabled={!form.cid}
+                  onClick={() => toggleField('line_active')}
+                  disabled={!form.cid || !form.active} // ปิดถ้า active ปิด
                   activeLabel="รับ LINE"
                   inactiveLabel="ปิด LINE"
                   iconOn={<BellRing size={20} />}
@@ -437,11 +468,10 @@ function ToggleCard({
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
             <span
-              className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-black ${
-                checked
-                  ? checkedBadgeClassName
-                  : "border-slate-200 bg-white text-slate-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-400"
-              }`}
+              className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-black ${checked
+                ? checkedBadgeClassName
+                : "border-slate-200 bg-white text-slate-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-400"
+                }`}
             >
               {checked ? iconOn : iconOff}
               {checked ? activeLabel : inactiveLabel}
@@ -457,14 +487,12 @@ function ToggleCard({
         </div>
 
         <span
-          className={`relative inline-flex h-8 w-14 shrink-0 items-center rounded-full p-0.5 shadow-inner transition ${
-            checked ? activeClassName : "bg-slate-300 dark:bg-slate-600"
-          }`}
+          className={`relative inline-flex h-8 w-14 shrink-0 items-center rounded-full p-0.5 shadow-inner transition ${checked ? activeClassName : "bg-slate-300 dark:bg-slate-600"
+            }`}
         >
           <span
-            className={`inline-flex h-7 w-7 transform items-center justify-center rounded-full bg-white shadow transition ${
-              checked ? "translate-x-6" : "translate-x-0"
-            }`}
+            className={`inline-flex h-7 w-7 transform items-center justify-center rounded-full bg-white shadow transition ${checked ? "translate-x-6" : "translate-x-0"
+              }`}
           >
             {checked ? (
               <span className="h-2.5 w-2.5 rounded-full bg-current text-emerald-500" />

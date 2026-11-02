@@ -1,0 +1,13 @@
+version: '3.9'
+
+services:
+  medical-record-yth:
+    build: .
+    container_name: medical-record-yth
+    restart: always
+
+    ports:
+      - "3003:3000"
+
+    environment:
+      NODE_ENV: production

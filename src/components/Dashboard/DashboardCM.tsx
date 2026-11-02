@@ -21,13 +21,34 @@ import {
   UsersRound,
   X,
 } from "lucide-react";
+import { Bar, Line } from "react-chartjs-2";
+import {
+  Chart as ChartJS,
+  CategoryScale,
+  LinearScale,
+  BarElement,
+  PointElement,
+  LineElement,
+  Title,
+  Tooltip,
+  Legend,
+} from "chart.js";
+import { format } from "date-fns";
+
+ChartJS.register(
+  LineElement,
+  CategoryScale,
+  LinearScale,
+  PointElement,
+  Tooltip,
+  Legend,
+);
 
 type DashboardResponse = {
   total: number;
   success: number;
   warning: number;
-  dchdateFrom?: string | null;
-  dchdateTo?: string | null;
+  items?: { key: string; total: number; success: number; warning: number }[];
 };
 
 type ThemeColor = "blue" | "emerald" | "amber" | "violet";
@@ -65,6 +86,7 @@ export default function DashboardCM() {
   const [dchdateTo, setDchdateTo] = useState("");
   const [appliedDchdateFrom, setAppliedDchdateFrom] = useState("");
   const [appliedDchdateTo, setAppliedDchdateTo] = useState("");
+  const [groupBy, setGroupBy] = useState<"day" | "month" | "year">("month");
 
   const openDatePicker = (input: HTMLInputElement | null) => {
     if (!input) return;
@@ -107,25 +129,20 @@ export default function DashboardCM() {
         "medical-chart-dashboard",
         appliedDchdateFrom,
         appliedDchdateTo,
+        groupBy,
       ],
       queryFn: async () => {
         const res = await axios.get("/api/medical-charts/dashboard", {
           params: {
             dchdateFrom: appliedDchdateFrom,
             dchdateTo: appliedDchdateTo,
+            groupBy,
           },
-          headers: {
-            "Cache-Control": "no-cache",
-          },
+          headers: { "Cache-Control": "no-cache" },
         });
-
         return res.data;
       },
       placeholderData: keepPreviousData,
-      staleTime: 0,
-      gcTime: 0,
-      refetchOnMount: true,
-      refetchOnWindowFocus: true,
     });
 
   const total = data?.total || 0;
@@ -142,6 +159,39 @@ export default function DashboardCM() {
     }),
     [successPercent],
   );
+
+  const monthlyData = useMemo(() => {
+    if (!data?.items || data.items.length === 0) return [];
+
+    return data.items.sort((a, b) => a.key.localeCompare(b.key));
+  }, [data]);
+
+  const labels = monthlyData.map((m) => m.key);
+  const successData = monthlyData.map((m) => m.success);
+  const warningData = monthlyData.map((m) => m.warning);
+  const totalData = monthlyData.map((m) => m.total);
+  // สมมติ groupBy มีค่า: "day" | "month" | "year"
+  const formattedLabels = labels.map((label) => {
+    const date = new Date(label);
+    if (groupBy === "day") {
+      // dd/MM/yyyy
+      return date.toLocaleDateString("th-TH", {
+        day: "2-digit",
+        month: "2-digit",
+        year: "2-digit",
+      });
+    } else if (groupBy === "month") {
+      // MMM yyyy
+      return date.toLocaleDateString("th-TH", {
+        month: "short",
+        year: "numeric",
+      });
+    } else if (groupBy === "year") {
+      // yyyy
+      return date.getFullYear().toString();
+    }
+    return label;
+  });
 
   return (
     <div className="w-full text-slate-900 transition-colors dark:text-slate-100">
@@ -227,7 +277,7 @@ export default function DashboardCM() {
           />
 
           <StatCard
-            title="Success"
+            title="สรุปเรียบร้อย"
             value={formatNumber(success)}
             subtitle={`คิดเป็น ${successPercent}% ของทั้งหมด`}
             icon={<CheckCircle2 size={24} />}
@@ -236,7 +286,7 @@ export default function DashboardCM() {
           />
 
           <StatCard
-            title="Warning"
+            title="รอสรุป"
             value={formatNumber(warning)}
             subtitle={`คิดเป็น ${warningPercent}% ของทั้งหมด`}
             icon={<AlertTriangle size={24} />}
@@ -262,7 +312,7 @@ export default function DashboardCM() {
                   ภาพรวมสถานะ
                 </h2>
                 <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-                  สัดส่วน Success และ Warning
+                  สัดส่วน สรุปเรียบร้อย และ รอสรุป
                 </p>
               </div>
 
@@ -291,7 +341,7 @@ export default function DashboardCM() {
                           {successPercent}%
                         </p>
                         <p className="mt-1 text-xs font-bold tracking-wide text-slate-500 uppercase dark:text-slate-400">
-                          Success Rate
+                          อัตราสรุปเรียบร้อย
                         </p>
                       </>
                     )}
@@ -300,13 +350,13 @@ export default function DashboardCM() {
 
                 <div className="mt-6 grid w-full gap-3 sm:grid-cols-2 xl:grid-cols-1 2xl:grid-cols-2">
                   <LegendItem
-                    label="Success"
+                    label="สรุปเรียบร้อย"
                     value={success}
                     percent={successPercent}
                     className="bg-emerald-500"
                   />
                   <LegendItem
-                    label="Warning"
+                    label="รอสรุป"
                     value={warning}
                     percent={warningPercent}
                     className="bg-amber-500"
@@ -362,7 +412,7 @@ export default function DashboardCM() {
               </div>
 
               <ProgressRow
-                label="Success"
+                label="สรุปเรียบร้อย"
                 value={success}
                 total={total}
                 percent={successPercent}
@@ -370,7 +420,7 @@ export default function DashboardCM() {
               />
 
               <ProgressRow
-                label="Warning"
+                label="รอสรุป"
                 value={warning}
                 total={total}
                 percent={warningPercent}
@@ -385,14 +435,94 @@ export default function DashboardCM() {
                 icon={<Activity size={18} />}
               />
               <MiniInfo
-                title="ตรวจสอบแล้ว"
+                title="สรุปเรียบร้อย"
                 value={formatNumber(success)}
                 icon={<CheckCircle2 size={18} />}
               />
               <MiniInfo
-                title="รอตรวจสอบ"
+                title="รอสรุป"
                 value={formatNumber(warning)}
                 icon={<AlertTriangle size={18} />}
+              />
+            </div>
+
+            <div className="mt-5 rounded-[1.75rem] border border-slate-200 bg-slate-50 p-5 dark:border-slate-700 dark:bg-slate-950/50">
+              <div className="mb-4 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                {/* Dropdown เลือกกลุ่มเวลา */}
+                <div className="flex items-center gap-2">
+                  <label className="text-sm font-semibold text-slate-700 dark:text-slate-300">
+                    แสดงข้อมูลตาม:
+                  </label>
+                  <select
+                    value={groupBy}
+                    onChange={(e) => setGroupBy(e.target.value as any)}
+                    className="h-10 rounded-xl border border-slate-300 bg-white/90 px-3 text-sm font-medium text-slate-800 shadow-sm transition focus:ring-2 focus:ring-blue-400 focus:outline-none dark:border-slate-700 dark:bg-slate-800/80 dark:text-white dark:focus:ring-blue-500"
+                  >
+                    <option value="day">วัน</option>
+                    <option value="month">เดือน</option>
+                    <option value="year">ปี</option>
+                  </select>
+                </div>
+
+                {/* หัวข้อกราฟ */}
+                <h2 className="text-lg font-bold text-slate-800 dark:text-slate-100">
+                  {" "}
+                  {groupBy === "day"
+                    ? "รายวัน"
+                    : groupBy === "month"
+                      ? "รายเดือน"
+                      : "รายปี"}
+                </h2>
+              </div>
+              <Line
+                data={{
+                  labels: formattedLabels,
+                  datasets: [
+                    {
+                      label: "สรุปเรียบร้อย",
+                      data: successData,
+                      borderColor: "#10B981",
+                      backgroundColor: "rgba(16,185,129,0.2)",
+                      tension: 0.3,
+                      fill: true,
+                    },
+                    {
+                      label: "รอสรุป",
+                      data: warningData,
+                      borderColor: "#F59E0B",
+                      backgroundColor: "rgba(245,158,11,0.2)",
+                      tension: 0.3,
+                      fill: true,
+                    },
+                    {
+                      label: "ทั้งหมด",
+                      data: totalData,
+                      borderColor: "#3B82F6",
+                      backgroundColor: "rgba(59,130,246,0.2)",
+                      tension: 0.3,
+                      fill: true,
+                    },
+                  ],
+                }}
+                options={{
+                  responsive: true,
+                  plugins: {
+                    legend: { position: "top" },
+                    title: {
+                      display: true,
+                      text: `ชาร์ตเวชระเบียน ${groupBy}`,
+                    },
+                  },
+                  scales: {
+                    y: { beginAtZero: true },
+                    x: {
+                      ticks: {
+                        maxRotation: 0,
+                        minRotation: 0,
+                      },
+                    },
+                  },
+                }}
               />
             </div>
           </div>

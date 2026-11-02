@@ -10,7 +10,9 @@ import {
   AlertTriangle,
   ArrowLeft,
   CalendarDays,
+  Check,
   CheckCircle2,
+  ChevronDown,
   ClipboardPenLine,
   FileWarning,
   Hash,
@@ -18,8 +20,10 @@ import {
   Loader2,
   RotateCcw,
   Save,
+  Search,
   Stethoscope,
   UserRound,
+  X,
 } from "lucide-react";
 
 type ChartStatus = "SUCCESS" | "WARNING" | "success" | "warning";
@@ -125,6 +129,29 @@ const normalizeStatus = (status?: ChartStatus): "SUCCESS" | "WARNING" => {
     : "WARNING";
 };
 
+const loadMedicalChartData = async (id: string) => {
+  const [chartRes, doctorsRes] = await Promise.all([
+    axios.get(`/api/medical-charts/${id}`),
+
+    axios.get("/api/doctors", {
+      params: {
+        page: 1,
+        limit: 100,
+        search: "",
+      },
+    }),
+  ]);
+
+  const chart: MedicalChart = chartRes.data?.data || chartRes.data;
+
+  const doctorList: Doctor[] = doctorsRes.data?.data || [];
+
+  return {
+    chart,
+    doctorList,
+  };
+};
+
 export default function EditMedicalChart() {
   const router = useRouter();
   const params = useParams();
@@ -139,6 +166,9 @@ export default function EditMedicalChart() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [doctorSearch, setDoctorSearch] = useState("");
+  const [doctorDropdownOpen, setDoctorDropdownOpen] = useState(false);
+  const doctorDropdownRef = useRef<HTMLDivElement | null>(null);
 
   const selectedDoctor = useMemo(() => {
     return (
@@ -203,29 +233,121 @@ export default function EditMedicalChart() {
     }));
   };
 
-  const fetchData = async () => {
+  useEffect(() => {
+    if (!id) return;
+
+    let ignore = false;
+
+    const loadData = async () => {
+      try {
+        const { chart, doctorList } = await loadMedicalChartData(id);
+
+        if (ignore) return;
+
+        setDoctors(doctorList);
+        setOriginalHn(chart.hn || "");
+
+        setForm({
+          hn: chart.hn || "",
+          an: chart.an || "",
+          fullname: chart.fullname || "",
+          regdate: toDateInputValue(chart.regdate),
+          dchdate: toDateInputValue(chart.dchdate),
+          doctor_code: chart.doctor_code || "",
+          ward_name: chart.ward_name || "",
+          num_date: Number(chart.num_date || 0),
+          status_chart: normalizeStatus(chart.status_chart),
+        });
+      } catch (err) {
+        if (ignore) return;
+
+        console.error(err);
+
+        setError("โหลดข้อมูล Medical Chart ไม่สำเร็จ");
+        toast.error("โหลดข้อมูล Medical Chart ไม่สำเร็จ");
+      } finally {
+        if (!ignore) {
+          setLoading(false);
+        }
+      }
+    };
+
+    void loadData();
+
+    return () => {
+      ignore = true;
+    };
+  }, [id]);
+
+  const filteredDoctors = useMemo(() => {
+    const keyword = doctorSearch.trim().toLowerCase();
+
+    if (!keyword) {
+      return doctors;
+    }
+
+    return doctors.filter((doctor) => {
+      const doctorId = String(doctor.doctorId || "").toLowerCase();
+      const name = String(doctor.name || "").toLowerCase();
+      const license = String(doctor.license || "").toLowerCase();
+
+      return (
+        doctorId.includes(keyword) ||
+        name.includes(keyword) ||
+        license.includes(keyword)
+      );
+    });
+  }, [doctors, doctorSearch]);
+
+  const handleSelectDoctor = (doctorId: string) => {
+    setForm((prev) => ({
+      ...prev,
+      doctor_code: doctorId,
+    }));
+
+    setDoctorSearch("");
+    setDoctorDropdownOpen(false);
+  };
+
+  const handleClearDoctor = () => {
+    setForm((prev) => ({
+      ...prev,
+      doctor_code: "",
+    }));
+
+    setDoctorSearch("");
+    setDoctorDropdownOpen(false);
+  };
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (
+        doctorDropdownRef.current &&
+        !doctorDropdownRef.current.contains(event.target as Node)
+      ) {
+        setDoctorDropdownOpen(false);
+      }
+    };
+
+    document.addEventListener("mousedown", handleClickOutside);
+
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, []);
+
+  const handleRetry = async () => {
     if (!id) return;
 
     try {
-      setLoading(true);
       setError("");
+      setLoading(true);
 
-      const [chartRes, doctorsRes] = await Promise.all([
-        axios.get(`/api/medical-charts/${id}`),
-        axios.get("/api/doctors", {
-          params: {
-            page: 1,
-            limit: 100,
-            search: "",
-          },
-        }),
-      ]);
-
-      const chart: MedicalChart = chartRes.data?.data || chartRes.data;
-      const doctorList: Doctor[] = doctorsRes.data?.data || [];
+      const { chart, doctorList } = await loadMedicalChartData(id);
 
       setDoctors(doctorList);
       setOriginalHn(chart.hn || "");
+
       setForm({
         hn: chart.hn || "",
         an: chart.an || "",
@@ -239,17 +361,13 @@ export default function EditMedicalChart() {
       });
     } catch (err) {
       console.error(err);
+
       setError("โหลดข้อมูล Medical Chart ไม่สำเร็จ");
       toast.error("โหลดข้อมูล Medical Chart ไม่สำเร็จ");
     } finally {
       setLoading(false);
     }
   };
-
-  useEffect(() => {
-    fetchData();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [id]);
 
   const validateForm = () => {
     if (!form.hn.trim()) return "กรุณากรอก HN";
@@ -340,7 +458,7 @@ export default function EditMedicalChart() {
         <p className="mt-2 text-sm">{error}</p>
         <button
           type="button"
-          onClick={fetchData}
+          onClick={handleRetry}
           className="mt-5 rounded-2xl bg-red-600 px-5 py-3 text-sm font-semibold text-white transition hover:bg-red-700"
         >
           ลองใหม่
@@ -361,7 +479,7 @@ export default function EditMedicalChart() {
           กลับหน้า Medical Chart
         </button>
 
-        <div className="overflow-hidden rounded-4xl border border-slate-200 bg-white shadow-2xl shadow-blue-100/60 dark:border-slate-700 dark:bg-slate-900 dark:shadow-black/30">
+        <div className="relative overflow-visible rounded-4xl border border-slate-200 bg-white shadow-2xl shadow-blue-100/60 dark:border-slate-700 dark:bg-slate-900 dark:shadow-black/30">
           <div className="relative overflow-hidden bg-linear-to-r from-blue-600 via-indigo-600 to-violet-600 px-6 py-8 text-white md:px-10 dark:from-blue-700 dark:via-indigo-800 dark:to-violet-800">
             <div className="absolute -top-12 -right-12 h-40 w-40 rounded-full bg-white/10" />
             <div className="absolute right-24 -bottom-16 h-44 w-44 rounded-full bg-white/10" />
@@ -517,21 +635,214 @@ export default function EditMedicalChart() {
               />
 
               <div className="mt-5 grid gap-4 md:grid-cols-2">
-                <div>
-                  <label className={labelClass}>แพทย์ผู้ดูแล</label>
-                  <select
-                    name="doctor_code"
-                    value={form.doctor_code}
-                    onChange={handleChange}
-                    className={inputClass}
-                  >
-                    <option value="">-- เลือกแพทย์ --</option>
-                    {doctors.map((doctor) => (
-                      <option key={doctor.id} value={doctor.doctorId}>
-                        {doctor.doctorId} - {doctor.name}
-                      </option>
-                    ))}
-                  </select>
+                <div className="relative z-50">
+                  <div ref={doctorDropdownRef} className="relative">
+                    <label className={labelClass}>แพทย์ผู้ดูแล</label>
+
+                    {/* Search / Selected Doctor */}
+                    <div className="relative">
+                      <Search
+                        size={18}
+                        className="pointer-events-none absolute top-1/2 left-4 -translate-y-1/2 text-slate-400"
+                      />
+
+                      <input
+                        type="text"
+                        value={
+                          doctorDropdownOpen
+                            ? doctorSearch
+                            : selectedDoctor
+                              ? `${selectedDoctor.doctorId} - ${selectedDoctor.name}`
+                              : doctorSearch
+                        }
+                        onFocus={() => {
+                          setDoctorDropdownOpen(true);
+                          setDoctorSearch("");
+                        }}
+                        onChange={(e) => {
+                          setDoctorSearch(e.target.value);
+                          setDoctorDropdownOpen(true);
+                        }}
+                        placeholder="ค้นหารหัสแพทย์, ชื่อ หรือเลข ว."
+                        autoComplete="off"
+                        className={`${inputClass} pr-20 pl-11`}
+                      />
+
+                      {/* Clear */}
+                      {form.doctor_code && (
+                        <button
+                          type="button"
+                          onClick={handleClearDoctor}
+                          className="absolute top-1/2 right-10 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-xl text-slate-400 transition hover:bg-red-50 hover:text-red-500 dark:hover:bg-red-500/10"
+                          title="ล้างแพทย์"
+                        >
+                          <X size={16} />
+                        </button>
+                      )}
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setDoctorDropdownOpen((prev) => !prev);
+                          setDoctorSearch("");
+                        }}
+                        className="absolute top-1/2 right-2 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-xl text-slate-400 transition hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-700 dark:hover:text-slate-200"
+                      >
+                        <ChevronDown
+                          size={17}
+                          className={`transition-transform duration-200 ${
+                            doctorDropdownOpen ? "rotate-180" : ""
+                          }`}
+                        />
+                      </button>
+                    </div>
+
+                    {/* Dropdown */}
+                    {doctorDropdownOpen && (
+                      <div className="absolute top-[calc(100%+8px)] right-0 left-0 z-[999] overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_24px_70px_-15px_rgba(15,23,42,0.30)] ring-1 ring-black/5 dark:border-slate-700 dark:bg-slate-900 dark:ring-white/10">
+                        {/* Header */}
+                        <div className="flex items-center justify-between border-b border-slate-100 bg-linear-to-r from-slate-50 to-blue-50/70 px-4 py-3 dark:border-slate-800 dark:from-slate-800 dark:to-blue-950/30">
+                          <div className="flex min-w-0 items-center gap-2.5">
+                            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-blue-100 text-blue-600 dark:bg-blue-500/15 dark:text-blue-300">
+                              <Stethoscope size={17} />
+                            </div>
+
+                            <div className="min-w-0">
+                              <p className="truncate text-sm font-bold text-slate-700 dark:text-slate-100">
+                                เลือกแพทย์ผู้ดูแล
+                              </p>
+
+                              <p className="truncate text-[11px] text-slate-400 dark:text-slate-500">
+                                ค้นหาด้วยรหัส ชื่อ หรือเลขใบประกอบวิชาชีพ
+                              </p>
+                            </div>
+                          </div>
+
+                          <span className="ml-3 inline-flex h-7 min-w-7 shrink-0 items-center justify-center rounded-full bg-blue-100 px-2 text-xs font-bold text-blue-700 dark:bg-blue-500/15 dark:text-blue-300">
+                            {filteredDoctors.length}
+                          </span>
+                        </div>
+
+                        {/* Doctor List */}
+                        <div className="max-h-[300px] overflow-y-auto overscroll-contain p-2">
+                          {filteredDoctors.length > 0 ? (
+                            <div className="space-y-1">
+                              {filteredDoctors.map((doctor) => {
+                                const active =
+                                  form.doctor_code === doctor.doctorId;
+
+                                const license = doctor.license
+                                  ? String(doctor.license).trim().match(/^ว/i)
+                                    ? String(doctor.license).trim()
+                                    : `ว${String(doctor.license).trim()}`
+                                  : null;
+
+                                return (
+                                  <button
+                                    key={doctor.id}
+                                    type="button"
+                                    onClick={() =>
+                                      handleSelectDoctor(doctor.doctorId)
+                                    }
+                                    className={`group relative flex w-full items-center gap-3 rounded-xl border px-3 py-3 text-left transition-all ${
+                                      active
+                                        ? "border-blue-200 bg-blue-50 shadow-sm dark:border-blue-500/30 dark:bg-blue-500/10"
+                                        : "border-transparent hover:border-slate-100 hover:bg-slate-50 dark:hover:border-slate-700 dark:hover:bg-slate-800"
+                                    }`}
+                                  >
+                                    {/* Doctor Icon */}
+                                    <div
+                                      className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl transition ${
+                                        active
+                                          ? "bg-blue-600 text-white"
+                                          : "bg-indigo-50 text-indigo-600 dark:bg-indigo-500/10 dark:text-indigo-300"
+                                      }`}
+                                    >
+                                      <Stethoscope size={18} />
+                                    </div>
+
+                                    {/* Info */}
+                                    <div className="min-w-0 flex-1">
+                                      <div className="flex min-w-0 items-center gap-2">
+                                        <span
+                                          className={`shrink-0 rounded-lg px-2 py-1 font-mono text-[11px] font-bold ${
+                                            active
+                                              ? "bg-blue-100 text-blue-700 dark:bg-blue-500/20 dark:text-blue-300"
+                                              : "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300"
+                                          }`}
+                                        >
+                                          {doctor.doctorId}
+                                        </span>
+
+                                        <p
+                                          className={`truncate text-sm font-semibold ${
+                                            active
+                                              ? "text-blue-800 dark:text-blue-200"
+                                              : "text-slate-700 dark:text-slate-200"
+                                          }`}
+                                        >
+                                          {doctor.name}
+                                        </p>
+                                      </div>
+
+                                      {license && (
+                                        <div className="mt-1.5">
+                                          <span className="inline-flex rounded-md bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300">
+                                            ใบประกอบวิชาชีพ {license}
+                                          </span>
+                                        </div>
+                                      )}
+                                    </div>
+
+                                    {/* Radio / Selected */}
+                                    <div className="flex h-8 w-8 shrink-0 items-center justify-center">
+                                      {active ? (
+                                        <div className="flex h-7 w-7 items-center justify-center rounded-full bg-blue-600 text-white">
+                                          <Check size={15} strokeWidth={3} />
+                                        </div>
+                                      ) : (
+                                        <div className="h-5 w-5 rounded-full border-2 border-slate-200 transition group-hover:border-blue-400 dark:border-slate-700" />
+                                      )}
+                                    </div>
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          ) : (
+                            <div className="flex flex-col items-center justify-center px-6 py-10 text-center">
+                              <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-100 text-slate-400 dark:bg-slate-800">
+                                <Search size={22} />
+                              </div>
+
+                              <p className="font-semibold text-slate-700 dark:text-slate-200">
+                                ไม่พบแพทย์
+                              </p>
+
+                              <p className="mt-1 text-xs text-slate-400">
+                                ลองค้นหาด้วยรหัสแพทย์ ชื่อ หรือเลข ว.
+                              </p>
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Footer */}
+                        {filteredDoctors.length > 0 && (
+                          <div className="flex items-center justify-between border-t border-slate-100 bg-slate-50 px-4 py-2.5 dark:border-slate-800 dark:bg-slate-800/60">
+                            <span className="text-[11px] text-slate-400">
+                              พบ {filteredDoctors.length} รายการ
+                            </span>
+
+                            {selectedDoctor && (
+                              <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-600 dark:text-emerald-400">
+                                <CheckCircle2 size={13} />
+                                เลือก {selectedDoctor.doctorId}
+                              </span>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
 
                   {selectedDoctor && (
                     <div className="mt-3 rounded-2xl border border-indigo-100 bg-indigo-50 p-3 text-sm text-indigo-700 dark:border-indigo-500/20 dark:bg-indigo-500/10 dark:text-indigo-300">

@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import axios from "axios";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -11,7 +11,10 @@ import {
   ArrowUp,
   ArrowUpDown,
   CalendarDays,
+  Check,
   CheckCircle2,
+  ChevronFirst,
+  ChevronLast,
   ChevronLeft,
   ChevronRight,
   Download,
@@ -108,6 +111,82 @@ const getStatusConfig = (status?: ChartStatus) => {
   };
 };
 
+type TableMedicalState = {
+  currentPage: number;
+  pageSize: number;
+  search: string;
+  searchDoctor: string;
+  dchdateFrom: string;
+  dchdateTo: string;
+  appliedSearch: string;
+  appliedSearchDoctor: string;
+  appliedDchdateFrom: string;
+  appliedDchdateTo: string;
+  sortBy: SortBy;
+  sortOrder: SortOrder;
+};
+
+const TABLE_MEDICAL_STATE_KEY = "table-medical-chart-state";
+
+const SORT_BY_VALUES: SortBy[] = [
+  "hn",
+  "an",
+  "fullname",
+  "regdate",
+  "dchdate",
+  "doctor_code",
+  "num_date",
+  "status_chart",
+];
+
+const defaultTableMedicalState: TableMedicalState = {
+  currentPage: 1,
+  pageSize: 10,
+  search: "",
+  searchDoctor: "",
+  dchdateFrom: "",
+  dchdateTo: "",
+  appliedSearch: "",
+  appliedSearchDoctor: "",
+  appliedDchdateFrom: "",
+  appliedDchdateTo: "",
+  sortBy: "dchdate",
+  sortOrder: "desc",
+};
+
+const getInitialTableMedicalState = (): TableMedicalState => {
+  if (typeof window === "undefined") return defaultTableMedicalState;
+
+  try {
+    const saved = sessionStorage.getItem(TABLE_MEDICAL_STATE_KEY);
+    if (!saved) return defaultTableMedicalState;
+
+    const parsed = JSON.parse(saved) as Partial<TableMedicalState>;
+
+    return {
+      ...defaultTableMedicalState,
+      ...parsed,
+      currentPage:
+        typeof parsed.currentPage === "number" && parsed.currentPage > 0
+          ? parsed.currentPage
+          : defaultTableMedicalState.currentPage,
+      pageSize:
+        typeof parsed.pageSize === "number" && parsed.pageSize > 0
+          ? parsed.pageSize
+          : defaultTableMedicalState.pageSize,
+      sortBy: SORT_BY_VALUES.includes(parsed.sortBy as SortBy)
+        ? (parsed.sortBy as SortBy)
+        : defaultTableMedicalState.sortBy,
+      sortOrder:
+        parsed.sortOrder === "asc" || parsed.sortOrder === "desc"
+          ? parsed.sortOrder
+          : defaultTableMedicalState.sortOrder,
+    };
+  } catch {
+    return defaultTableMedicalState;
+  }
+};
+
 function SortableHeader({
   label,
   sortKey,
@@ -150,19 +229,35 @@ function SortableHeader({
 export default function TableMedicalChart() {
   const router = useRouter();
 
-  const [currentPage, setCurrentPage] = useState(1);
-  const [pageSize, setPageSize] = useState(10);
+  const initialTableState = useMemo(() => getInitialTableMedicalState(), []);
 
-  const [search, setSearch] = useState("");
-  const [dchdateFrom, setDchdateFrom] = useState("");
-  const [dchdateTo, setDchdateTo] = useState("");
+  const [currentPage, setCurrentPage] = useState(initialTableState.currentPage);
+  const [pageSize, setPageSize] = useState(initialTableState.pageSize);
 
-  const [appliedSearch, setAppliedSearch] = useState("");
-  const [appliedDchdateFrom, setAppliedDchdateFrom] = useState("");
-  const [appliedDchdateTo, setAppliedDchdateTo] = useState("");
+  const [search, setSearch] = useState(initialTableState.search);
+  const [searchDoctor, setSearchDoctor] = useState(
+    initialTableState.searchDoctor,
+  );
+  const [dchdateFrom, setDchdateFrom] = useState(initialTableState.dchdateFrom);
+  const [dchdateTo, setDchdateTo] = useState(initialTableState.dchdateTo);
 
-  const [sortBy, setSortBy] = useState<SortBy>("dchdate");
-  const [sortOrder, setSortOrder] = useState<SortOrder>("desc");
+  const [appliedSearch, setAppliedSearch] = useState(
+    initialTableState.appliedSearch,
+  );
+  const [appliedSearchDoctor, setAppliedSearchDoctor] = useState(
+    initialTableState.appliedSearchDoctor,
+  );
+  const [appliedDchdateFrom, setAppliedDchdateFrom] = useState(
+    initialTableState.appliedDchdateFrom,
+  );
+  const [appliedDchdateTo, setAppliedDchdateTo] = useState(
+    initialTableState.appliedDchdateTo,
+  );
+
+  const [sortBy, setSortBy] = useState<SortBy>(initialTableState.sortBy);
+  const [sortOrder, setSortOrder] = useState<SortOrder>(
+    initialTableState.sortOrder,
+  );
 
   const [deleteTarget, setDeleteTarget] = useState<MedicalChart | null>(null);
   const [deleting, setDeleting] = useState(false);
@@ -172,6 +267,38 @@ export default function TableMedicalChart() {
 
   const dchdateFromRef = useRef<HTMLInputElement | null>(null);
   const dchdateToRef = useRef<HTMLInputElement | null>(null);
+
+  useEffect(() => {
+    const state: TableMedicalState = {
+      currentPage,
+      pageSize,
+      search,
+      searchDoctor,
+      dchdateFrom,
+      dchdateTo,
+      appliedSearch,
+      appliedSearchDoctor,
+      appliedDchdateFrom,
+      appliedDchdateTo,
+      sortBy,
+      sortOrder,
+    };
+
+    sessionStorage.setItem(TABLE_MEDICAL_STATE_KEY, JSON.stringify(state));
+  }, [
+    currentPage,
+    pageSize,
+    search,
+    searchDoctor,
+    dchdateFrom,
+    dchdateTo,
+    appliedSearch,
+    appliedSearchDoctor,
+    appliedDchdateFrom,
+    appliedDchdateTo,
+    sortBy,
+    sortOrder,
+  ]);
 
   const openDatePicker = (input: HTMLInputElement | null) => {
     if (!input) return;
@@ -192,7 +319,13 @@ export default function TableMedicalChart() {
   };
 
   const handleApplyFilters = () => {
-    setAppliedSearch(search.trim());
+    setAppliedSearch(search);
+    setAppliedDchdateFrom(dchdateFrom);
+    setAppliedDchdateTo(dchdateTo);
+    setCurrentPage(1);
+  };
+  const handleApplyFiltersDoctor = () => {
+    setAppliedSearchDoctor(searchDoctor);
     setAppliedDchdateFrom(dchdateFrom);
     setAppliedDchdateTo(dchdateTo);
     setCurrentPage(1);
@@ -230,7 +363,8 @@ export default function TableMedicalChart() {
 
       const res = await axios.get("/api/medical-charts/export", {
         params: {
-          search: search.trim(),
+          search: search,
+          searchDoctor: searchDoctor,
           dchdateFrom,
           dchdateTo,
           sortBy,
@@ -322,9 +456,11 @@ export default function TableMedicalChart() {
 
   const clearAllFilters = () => {
     setSearch("");
+    setSearchDoctor("");
     setDchdateFrom("");
     setDchdateTo("");
     setAppliedSearch("");
+    setAppliedSearchDoctor("");
     setAppliedDchdateFrom("");
     setAppliedDchdateTo("");
     setCurrentPage(1);
@@ -336,6 +472,7 @@ export default function TableMedicalChart() {
       currentPage,
       pageSize,
       appliedSearch,
+      appliedSearchDoctor,
       appliedDchdateFrom,
       appliedDchdateTo,
       sortBy,
@@ -345,6 +482,7 @@ export default function TableMedicalChart() {
       currentPage,
       pageSize,
       appliedSearch,
+      appliedSearchDoctor,
       appliedDchdateFrom,
       appliedDchdateTo,
       sortBy,
@@ -360,7 +498,8 @@ export default function TableMedicalChart() {
           params: {
             page: currentPage,
             limit: pageSize,
-            search: appliedSearch,
+            search: appliedSearch || undefined, // ถ้าว่างไม่ส่ง
+            searchDoctor: appliedSearchDoctor || undefined, // ถ้าไม่ค้นแพทย์ก็ไม่ส่ง
             dchdateFrom: appliedDchdateFrom,
             dchdateTo: appliedDchdateTo,
             sortBy,
@@ -385,8 +524,10 @@ export default function TableMedicalChart() {
   const total = data?.meta?.total || 0;
 
   const hasSearch = Boolean(appliedSearch);
+  const hasSearchDoctor = Boolean(appliedSearchDoctor);
   const hasDateFilter = Boolean(appliedDchdateFrom || appliedDchdateTo);
   const hasAnyFilter = hasSearch || hasDateFilter;
+  const hasAnySearchDoctor = hasSearchDoctor || hasDateFilter;
 
   const pageNumbers = useMemo(() => {
     const maxVisible = 5;
@@ -405,8 +546,10 @@ export default function TableMedicalChart() {
   const handleSendLineSummary = async () => {
     const selectedDchdateFrom = appliedDchdateFrom || dchdateFrom;
     const selectedDchdateTo = appliedDchdateTo || dchdateTo;
-    const selectedSearch = appliedSearch || search.trim();
+    const selectedSearch = appliedSearch || search;
+    const selectedSearchDoctor = appliedSearchDoctor || searchDoctor;
 
+    // ตรวจสอบวันเริ่มต้นไม่เกินวันสิ้นสุด
     if (
       selectedDchdateFrom &&
       selectedDchdateTo &&
@@ -419,20 +562,31 @@ export default function TableMedicalChart() {
     try {
       setSendingLine(true);
 
+      // เรียก API ใหม่ที่ปรับแล้ว (line-summary)
       const res = await axios.post("/api/medical-charts/line-summary", {
-        // testCid: "1469900266972", // ✅ เทสส่งให้คนเดียว
-        search: selectedSearch,
+        search: selectedSearch, // HN / AN / ชื่อผู้ป่วย
+        searchDoctor: selectedSearchDoctor, // ชื่อ / รหัส / license แพทย์
         dchdateFrom: selectedDchdateFrom,
         dchdateTo: selectedDchdateTo,
       });
 
-      toast.success(res.data?.message || "ส่ง LINE สำเร็จ");
+      // แจ้งผล
+      toast.success(res.data?.message || "ส่ง LINE สรุปแพทย์สำเร็จ");
     } catch (err: any) {
       console.error(err);
       toast.error(err?.response?.data?.message || "ส่ง LINE ไม่สำเร็จ");
     } finally {
       setSendingLine(false);
     }
+  };
+
+  const filteredCharts = charts;
+  const displayCount = total;
+  // const displayCount = hasAnyFilter || hasAnySearchDoctor ? total : total;
+
+  const handleSearch = () => {
+    handleApplyFilters?.();
+    handleApplyFiltersDoctor?.();
   };
 
   return (
@@ -524,28 +678,59 @@ export default function TableMedicalChart() {
                   <label className="mb-2 block text-xs font-semibold tracking-wide text-slate-500 uppercase dark:text-slate-400">
                     ค้นหา
                   </label>
-                  <Search className="pointer-events-none absolute top-[43px] left-4 h-5 w-5 text-slate-400 dark:text-slate-500" />
+                  <Search className="pointer-events-none absolute top-10.75 left-4 h-5 w-5 text-slate-400 dark:text-slate-500" />
                   <input
                     type="text"
-                    placeholder="ค้นหา HN, AN, ชื่อผู้ป่วย, รหัสแพทย์ หรือชื่อแพทย์..."
+                    placeholder="ค้นหา HN, AN, ชื่อผู้ป่วย"
                     value={search}
                     onChange={(e) => setSearch(e.target.value)}
                     onKeyDown={(e) => {
                       if (e.key === "Enter") handleApplyFilters();
                     }}
-                    className="h-[58px] w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 pr-11 pl-12 text-sm text-slate-900 shadow-sm transition outline-none placeholder:text-slate-400 focus:border-blue-500 focus:bg-white focus:ring-4 focus:ring-blue-100 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 dark:placeholder:text-slate-500 dark:focus:border-blue-400 dark:focus:bg-slate-800 dark:focus:ring-blue-500/20"
+                    className="h-14.5 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 pr-11 pl-12 text-sm text-slate-900 shadow-sm transition outline-none placeholder:text-slate-400 focus:border-blue-500 focus:bg-white focus:ring-4 focus:ring-blue-100 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 dark:placeholder:text-slate-500 dark:focus:border-blue-400 dark:focus:bg-slate-800 dark:focus:ring-blue-500/20"
                   />
 
                   {search && (
                     <button
                       type="button"
                       onClick={() => setSearch("")}
-                      className="absolute top-[38px] right-3 flex h-8 w-8 items-center justify-center rounded-xl text-slate-400 transition hover:bg-slate-100 hover:text-slate-700 dark:text-slate-500 dark:hover:bg-slate-700 dark:hover:text-slate-200"
+                      className="absolute top-9.5 right-3 flex h-8 w-8 items-center justify-center rounded-xl text-slate-400 transition hover:bg-slate-100 hover:text-slate-700 dark:text-slate-500 dark:hover:bg-slate-700 dark:hover:text-slate-200"
                       aria-label="ล้างคำค้นหา"
                     >
                       <X size={16} />
                     </button>
                   )}
+                </div>
+
+                <div className="relative min-w-0">
+                  <label className="mb-2 block text-xs font-semibold tracking-wide text-slate-500 uppercase dark:text-slate-400">
+                    ค้นหาแพทย์
+                  </label>
+
+                  <div className="relative">
+                    <Search className="pointer-events-none absolute top-1/2 left-4 h-5 w-5 -translate-y-1/2 text-slate-400" />
+
+                    <input
+                      type="text"
+                      placeholder="ค้นหาชื่อแพทย์..."
+                      value={searchDoctor}
+                      onChange={(e) => setSearchDoctor(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") handleApplyFiltersDoctor();
+                      }}
+                      className="h-14.5 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 pr-11 pl-12 text-sm text-slate-900 shadow-sm transition outline-none placeholder:text-slate-400 focus:border-blue-500 focus:bg-white focus:ring-4 focus:ring-blue-100 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 dark:placeholder:text-slate-500 dark:focus:border-blue-400 dark:focus:bg-slate-800 dark:focus:ring-blue-500/20"
+                    />
+
+                    {searchDoctor && (
+                      <button
+                        type="button"
+                        onClick={() => setSearchDoctor("")}
+                        className="absolute top-1/2 right-3 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-xl text-slate-400 hover:bg-slate-100"
+                      >
+                        <X size={16} />
+                      </button>
+                    )}
+                  </div>
                 </div>
 
                 <div className="min-w-0">
@@ -559,7 +744,7 @@ export default function TableMedicalChart() {
                         type="date"
                         value={dchdateFrom}
                         onChange={(e) => setDchdateFrom(e.target.value)}
-                        className="h-[58px] w-full cursor-pointer rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 pr-4 pl-12 text-sm text-slate-900 shadow-sm transition outline-none focus:border-blue-500 focus:bg-white focus:ring-4 focus:ring-blue-100 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 dark:focus:border-blue-400 dark:focus:ring-blue-500/20"
+                        className="h-14.5 w-full cursor-pointer rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 pr-4 pl-12 text-sm text-slate-900 shadow-sm transition outline-none focus:border-blue-500 focus:bg-white focus:ring-4 focus:ring-blue-100 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 dark:focus:border-blue-400 dark:focus:ring-blue-500/20"
                       />
 
                       <button
@@ -578,7 +763,7 @@ export default function TableMedicalChart() {
                         type="date"
                         value={dchdateTo}
                         onChange={(e) => setDchdateTo(e.target.value)}
-                        className="h-[58px] w-full cursor-pointer rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 pr-4 pl-12 text-sm text-slate-900 shadow-sm transition outline-none focus:border-blue-500 focus:bg-white focus:ring-4 focus:ring-blue-100 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 dark:focus:border-blue-400 dark:focus:ring-blue-500/20"
+                        className="h-14.5 w-full cursor-pointer rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 pr-4 pl-12 text-sm text-slate-900 shadow-sm transition outline-none focus:border-blue-500 focus:bg-white focus:ring-4 focus:ring-blue-100 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 dark:focus:border-blue-400 dark:focus:ring-blue-500/20"
                       />
 
                       <button
@@ -594,10 +779,10 @@ export default function TableMedicalChart() {
                 </div>
               </div>
 
-              <div className="grid gap-2 sm:grid-cols-[auto_minmax(0,1fr)] 2xl:h-[58px] 2xl:min-w-[420px] 2xl:items-end">
+              <div className="grid gap-2 sm:grid-cols-[auto_minmax(0,1fr)] 2xl:h-14.5 2xl:min-w-105 2xl:items-end">
                 <button
                   type="button"
-                  onClick={handleApplyFilters}
+                  onClick={handleSearch}
                   className="inline-flex h-12 w-full items-center justify-center gap-2 rounded-2xl bg-blue-600 px-6 text-sm font-semibold text-white shadow-lg shadow-blue-200 transition hover:-translate-y-0.5 hover:bg-blue-700 hover:shadow-xl sm:w-auto dark:bg-blue-500 dark:shadow-blue-950/40 dark:hover:bg-blue-400"
                 >
                   <Search size={16} />
@@ -606,9 +791,16 @@ export default function TableMedicalChart() {
 
                 <div className="inline-flex h-12 min-w-0 items-center justify-center gap-3 rounded-2xl border border-slate-200 bg-white px-3 text-sm font-medium text-slate-600 shadow-sm dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
                   <div className="inline-flex min-w-0 items-center gap-1.5 whitespace-nowrap">
-                    <span>{hasAnyFilter ? "พบผลลัพธ์" : "ทั้งหมด"}</span>
+                    {/* <span>{hasAnyFilter || hasAnySearchDoctor ? "พบผลลัพธ์" : "ทั้งหมด"}</span> */}
+                    <span>
+                      {hasAnySearchDoctor
+                        ? "ผลค้นหาแพทย์"
+                        : hasAnyFilter
+                          ? "พบผลลัพธ์"
+                          : "ทั้งหมด"}
+                    </span>
                     <span className="inline-flex h-7 min-w-7 items-center justify-center rounded-full bg-blue-100 px-2 text-sm font-bold text-blue-700 dark:bg-blue-500/15 dark:text-blue-300">
-                      {total.toLocaleString()}
+                      {displayCount.toLocaleString()}
                     </span>
                     <span>รายการ</span>
                   </div>
@@ -629,7 +821,7 @@ export default function TableMedicalChart() {
               </div>
             </div>
 
-            {hasAnyFilter && (
+            {(hasAnyFilter || hasAnySearchDoctor) && (
               <div className="flex flex-wrap items-center gap-2 rounded-3xl border border-slate-200 bg-slate-50 p-3 dark:border-slate-700 dark:bg-slate-800/70">
                 <span className="text-xs font-semibold tracking-wide text-slate-500 uppercase dark:text-slate-400">
                   ตัวกรองที่ใช้
@@ -638,6 +830,13 @@ export default function TableMedicalChart() {
                 {hasSearch && (
                   <span className="inline-flex max-w-full items-center gap-2 rounded-full bg-blue-100 px-3 py-1 text-xs font-semibold text-blue-700 dark:bg-blue-500/15 dark:text-blue-300">
                     <span className="truncate">ค้นหา: {appliedSearch}</span>
+                  </span>
+                )}
+                {hasSearchDoctor && (
+                  <span className="inline-flex max-w-full items-center gap-2 rounded-full bg-blue-100 px-3 py-1 text-xs font-semibold text-blue-700 dark:bg-blue-500/15 dark:text-blue-300">
+                    <span className="truncate">
+                      ค้นหา: {appliedSearchDoctor}
+                    </span>
                   </span>
                 )}
 
@@ -708,7 +907,7 @@ export default function TableMedicalChart() {
           {!isLoading && !isError && (
             <div className="overflow-hidden rounded-3xl border border-slate-200 dark:border-slate-700">
               <div className="w-full overflow-x-auto">
-                <table className="min-w-[1200px] text-sm lg:min-w-full">
+                <table className="min-w-300 text-sm lg:min-w-full">
                   <thead className="bg-slate-50 text-xs tracking-wide text-slate-500 uppercase dark:bg-slate-800/80 dark:text-slate-400">
                     <tr>
                       <SortableHeader
@@ -731,7 +930,7 @@ export default function TableMedicalChart() {
                         activeSortBy={sortBy}
                         sortOrder={sortOrder}
                         onSort={handleSort}
-                        className="min-w-[220px]"
+                        className="min-w-55"
                       />
                       <SortableHeader
                         label="วัน Admit"
@@ -753,7 +952,7 @@ export default function TableMedicalChart() {
                         activeSortBy={sortBy}
                         sortOrder={sortOrder}
                         onSort={handleSort}
-                        className="min-w-[220px]"
+                        className="min-w-55"
                       />
                       <SortableHeader
                         label="จำนวนวันล่าช้า"
@@ -778,14 +977,25 @@ export default function TableMedicalChart() {
                   </thead>
 
                   <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                    {charts.map((chart, index) => {
+                    {filteredCharts.map((chart, index) => {
                       const status = getStatusConfig(chart.status_chart);
                       const StatusIcon = status.icon;
+
                       const doctorName =
                         chart.doctor_name ||
                         chart.doctor?.name ||
                         chart.doctor_code ||
                         "-";
+
+                      const diffDays = Math.floor(
+                        (Date.now() - new Date(chart.dchdate).getTime()) /
+                          (1000 * 60 * 60 * 24),
+                      );
+
+                      const lateDays = Math.max(diffDays - 7, 0);
+
+                      // 👉 อันนี้คือ “วันล่าช้าจริง”
+                      const num_date = lateDays;
 
                       return (
                         <tr
@@ -804,7 +1014,7 @@ export default function TableMedicalChart() {
                             {chart.an || "-"}
                           </td>
 
-                          <td className="min-w-[220px] px-4 py-4 text-slate-700 dark:text-slate-300">
+                          <td className="min-w-55 px-4 py-4 text-slate-700 dark:text-slate-300">
                             <div className="flex items-center gap-3">
                               <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-blue-100 text-blue-600 dark:bg-blue-500/15 dark:text-blue-300">
                                 <UserRound size={17} />
@@ -823,7 +1033,7 @@ export default function TableMedicalChart() {
                             {formatDate(chart.dchdate)}
                           </td>
 
-                          <td className="min-w-[220px] px-4 py-4 text-slate-700 dark:text-slate-300">
+                          <td className="min-w-55 px-4 py-4 text-slate-700 dark:text-slate-300">
                             <div className="flex items-center gap-3">
                               <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-indigo-100 text-indigo-600 dark:bg-indigo-500/15 dark:text-indigo-300">
                                 <Stethoscope size={17} />
@@ -841,13 +1051,20 @@ export default function TableMedicalChart() {
 
                           <td className="px-4 py-4 text-center whitespace-nowrap">
                             <span
-                              className={`inline-flex min-w-16 items-center justify-center rounded-full px-3 py-1 text-xs font-semibold ring-1 ${
-                                Number(chart.num_date) > 0
-                                  ? "bg-amber-100 text-amber-700 ring-amber-200 dark:bg-amber-500/15 dark:text-amber-300 dark:ring-amber-500/20"
-                                  : "bg-slate-100 text-slate-600 ring-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:ring-slate-700"
-                              }`}
+                              className={`inline-flex min-w-16 items-center justify-center rounded-full px-3 py-1 text-xs font-semibold ring-1 transition-all duration-200 ease-in-out ${
+                                chart.status_chart?.toUpperCase() === "SUCCESS"
+                                  ? "bg-green-100 text-green-800 shadow-sm ring-green-200 dark:bg-green-500/15 dark:text-green-300 dark:ring-green-500/20"
+                                  : Number(num_date) > 0
+                                    ? "bg-amber-100 text-amber-700 shadow-sm ring-amber-200 dark:bg-amber-500/15 dark:text-amber-300 dark:ring-amber-500/20"
+                                    : "bg-slate-100 text-slate-600 ring-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:ring-slate-700"
+                              } `}
                             >
-                              {Number(chart.num_date || 0)} วัน
+                              {chart.status_chart?.toUpperCase() ===
+                              "SUCCESS" ? (
+                                <Check className="h-4 w-4 text-green-600 dark:text-green-400" />
+                              ) : (
+                                `${Number(num_date || 0)} วัน`
+                              )}
                             </span>
                           </td>
 
@@ -900,7 +1117,7 @@ export default function TableMedicalChart() {
                 </table>
               </div>
 
-              {charts.length === 0 && (
+              {filteredCharts.length === 0 && (
                 <div className="flex flex-col items-center justify-center bg-white py-16 text-center text-slate-400 dark:bg-slate-900 dark:text-slate-500">
                   <OctagonX className="mb-3 h-10 w-10" />
                   <p className="font-medium">ไม่พบข้อมูล Medical Chart</p>
@@ -934,6 +1151,17 @@ export default function TableMedicalChart() {
               </div>
 
               <div className="flex flex-wrap items-center justify-center gap-2">
+                {/* ปุ่มไปหน้าสุด */}
+                <button
+                  type="button"
+                  onClick={() => setCurrentPage(1)}
+                  disabled={currentPage === 1}
+                  className="inline-flex items-center gap-1 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-600 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700"
+                >
+                  <ChevronFirst />
+                </button>
+
+                {/* ปุ่มย้อนกลับ */}
                 <button
                   type="button"
                   onClick={() =>
@@ -943,9 +1171,9 @@ export default function TableMedicalChart() {
                   className="inline-flex items-center gap-1 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-600 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700"
                 >
                   <ChevronLeft size={16} />
-                  ก่อนหน้า
                 </button>
 
+                {/* ปุ่มเลขหน้า */}
                 {pageNumbers.map((page) => (
                   <button
                     key={page}
@@ -961,6 +1189,7 @@ export default function TableMedicalChart() {
                   </button>
                 ))}
 
+                {/* ปุ่มถัดไป */}
                 <button
                   type="button"
                   onClick={() =>
@@ -969,8 +1198,17 @@ export default function TableMedicalChart() {
                   disabled={currentPage === totalPages}
                   className="inline-flex items-center gap-1 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-600 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700"
                 >
-                  ถัดไป
                   <ChevronRight size={16} />
+                </button>
+
+                {/* ปุ่มไปหน้าหลังสุด */}
+                <button
+                  type="button"
+                  onClick={() => setCurrentPage(totalPages)}
+                  disabled={currentPage === totalPages}
+                  className="inline-flex items-center gap-1 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-600 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700"
+                >
+                  <ChevronLast />
                 </button>
               </div>
             </div>

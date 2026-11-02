@@ -20,7 +20,7 @@ export default function AuthLayout({
             <div className="relative z-1 flex items-center justify-center">
               <GridShape />
 
-              <div className="flex max-w-sm flex-col items-center text-center">
+              <div className="flex max-w-2xl flex-col items-center text-center">
                 <Link href="/" className="mb-6 block">
                   <Image
                     src="/images/logo/yth_logo.png"
@@ -37,7 +37,7 @@ export default function AuthLayout({
                   </div>
 
                   <div className="space-y-2">
-                    <h1 className="text-2xl leading-tight font-black tracking-tight text-white drop-shadow-sm">
+                    <h1 className="text-2xl lg:text-3xl whitespace-nowrap leading-tight font-black tracking-tight text-white drop-shadow-sm">
                       ระบบติดตามการสรุปเวชระเบียนผู้ป่วยใน
                     </h1>
 

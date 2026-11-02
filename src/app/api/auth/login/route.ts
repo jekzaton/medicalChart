@@ -54,11 +54,16 @@ export async function POST(req: Request) {
       { status: 200 },
     );
 
+    const isProduction = process.env.NODE_ENV === "production";
+
+    const isHttps = process.env.NEXT_PUBLIC_APP_URL?.startsWith("https://");
+
     res.cookies.set("token", token, {
       httpOnly: true,
       path: "/",
       sameSite: "lax",
-      secure: process.env.NODE_ENV === "production",
+      secure: isProduction && isHttps,
+      // secure: process.env.NODE_ENV === "production",
       maxAge: 60 * 60 * 24,
     });
 

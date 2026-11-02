@@ -1,399 +1,432 @@
+// src/app/api/medical-charts/import/route.ts
 import { NextResponse } from "next/server";
-import { PrismaClient } from "@prisma/client";
+import { prisma } from "@/lib/prisma";
 import { z } from "zod";
 import * as XLSX from "xlsx";
 import { withAdmin } from "@/lib/withAuth";
 
 export const runtime = "nodejs";
 
-const prisma = new PrismaClient();
-
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
 
+const validDate = z.custom<Date>(
+  (value) => value instanceof Date && !Number.isNaN(value.getTime()),
+  "รูปแบบวันที่ไม่ถูกต้อง",
+);
+
 const rowSchema = z.object({
-  hn: z.string().min(1, "กรอก HN"),
-  an: z.string().min(1, "กรอก AN"),
-  fullname: z.string().min(1, "กรอกชื่อ-สกุล"),
-  regdate: z.coerce.date({ message: "วันที่ Admit ไม่ถูกต้อง" }),
-  dchdate: z.coerce.date({ message: "วันที่ Discharge ไม่ถูกต้อง" }),
-  doctor_code: z.string().min(1, "กรอกรหัสแพทย์"),
-  ward_name: z.string().optional().default(""),
-  num_date: z.coerce.number().int().min(0).optional().default(0),
-  status_chart: z
-    .enum(["SUCCESS", "WARNING", "success", "warning"])
-    .optional()
-    .default("WARNING"),
+  hn: z.string().trim().min(1, "กรอก HN"),
+  an: z.string().trim().min(1, "กรอก AN"),
+  fullname: z.string().trim().min(1, "กรอกชื่อ-สกุล"),
+  regdate: validDate,
+  dchdate: validDate,
+  doctor_code: z.string().trim().min(1, "กรอกรหัสแพทย์"),
+  ward_name: z.string().trim().optional().default(""),
+  status_chart: z.enum(["SUCCESS", "WARNING"]).optional().default("WARNING"),
 });
 
 type ImportRow = z.infer<typeof rowSchema>;
-
 type ExcelRow = Record<string, unknown>;
 
-const normalizeKey = (key: string) => {
-  return key
-    .toString()
-    .trim()
-    .toLowerCase()
-    .replace(/\s+/g, "_")
-    .replace(/-/g, "_");
+type ImportError = {
+  row: number;
+  an?: string;
+  hn?: string;
+  message: string;
 };
 
-const getValue = (row: ExcelRow, keys: string[]) => {
-  const normalizedRow = Object.entries(row).reduce<Record<string, unknown>>(
-    (acc, [key, value]) => {
-      acc[normalizeKey(key)] = value;
-      return acc;
-    },
-    {},
-  );
+type ImportWarning = {
+  row: number;
+  an?: string;
+  hn?: string;
+  message: string;
+};
 
+const normalizeKey = (key: string) =>
+  String(key)
+    .replace(/[\u200B-\u200D\uFEFF]/g, "")
+    .toLowerCase()
+    .trim()
+    .replace(/\s+/g, "_")
+    .replace(/[-–—]/g, "_")
+    .replace(/[()]/g, "");
+
+const toCleanString = (value: unknown) => String(value ?? "").trim();
+
+const getCell = (row: Record<string, unknown>, keys: string[]): unknown => {
   for (const key of keys) {
-    const value = normalizedRow[normalizeKey(key)];
+    const normalizedKey = normalizeKey(key);
+    const value = row[normalizedKey];
 
     if (value !== undefined && value !== null && String(value).trim() !== "") {
       return value;
     }
   }
 
-  return undefined;
+  return "";
 };
 
-const toStringValue = (value: unknown) => {
-  if (value === undefined || value === null) return "";
-  return String(value).trim();
-};
+const convertBuddhistToGregorian = (dateValue: unknown): Date | null => {
+  if (!dateValue) return null;
 
-const excelSerialDateToDate = (serial: number) => {
-  const excelEpoch = new Date(Date.UTC(1899, 11, 30));
-  return new Date(excelEpoch.getTime() + serial * 24 * 60 * 60 * 1000);
-};
+  if (dateValue instanceof Date && !Number.isNaN(dateValue.getTime())) {
+    const year = dateValue.getFullYear();
 
-const parseDateValue = (value: unknown) => {
-  if (!value) return undefined;
+    if (year >= 2500) {
+      return new Date(
+        Date.UTC(year - 543, dateValue.getMonth(), dateValue.getDate()),
+      );
+    }
 
-  if (value instanceof Date) {
-    return value;
+    return dateValue;
   }
 
+  if (typeof dateValue === "number") {
+    const d = XLSX.SSF.parse_date_code(dateValue);
+
+    if (!d) return null;
+
+    const year = d.y >= 2500 ? d.y - 543 : d.y;
+
+    return new Date(Date.UTC(year, d.m - 1, d.d));
+  }
+
+  if (typeof dateValue === "string") {
+    const value = dateValue.trim();
+
+    if (!value) return null;
+
+    const parts = value.split(/[/-]/).map((p) => parseInt(p, 10));
+
+    if (parts.length !== 3 || parts.some((p) => Number.isNaN(p))) {
+      const parsed = new Date(value);
+
+      if (!Number.isNaN(parsed.getTime())) {
+        return parsed;
+      }
+
+      return null;
+    }
+
+    let day: number;
+    let month: number;
+    let year: number;
+
+    // รองรับ yyyy-mm-dd
+    if (String(parts[0]).length === 4 || parts[0] > 31) {
+      year = parts[0];
+      month = parts[1];
+      day = parts[2];
+    } else {
+      // รองรับ dd/mm/yyyy
+      day = parts[0];
+      month = parts[1];
+      year = parts[2];
+    }
+
+    if (year >= 2500) year -= 543;
+
+    if (month < 1 || month > 12 || day < 1 || day > 31) {
+      return null;
+    }
+
+    return new Date(Date.UTC(year, month - 1, day));
+  }
+
+  return null;
+};
+
+const getImportMessage = (error: unknown) => {
+  if (error instanceof z.ZodError) {
+    return error.issues.map((issue) => issue.message).join(", ");
+  }
+
+  if (error instanceof Error) {
+    return error.message;
+  }
+
+  return "Import failed";
+};
+
+function normalizeDate(value: any): Date {
+  if (!value) return new Date();
+
+  if (value instanceof Date) return value;
+
+  // Excel serial number
   if (typeof value === "number") {
-    return excelSerialDateToDate(value);
+    return new Date((value - 25569) * 86400 * 1000);
   }
 
-  const text = String(value).trim();
+  return new Date(value);
+}
 
-  // รองรับ dd/mm/yyyy หรือ dd-mm-yyyy รวมถึงปี พ.ศ.
-  const thaiDateMatch = text.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{4})$/);
+const toDateKey = (value: Date | null | undefined) => {
+  if (!value) return "";
 
-  if (thaiDateMatch) {
-    const day = Number(thaiDateMatch[1]);
-    const month = Number(thaiDateMatch[2]);
-    let year = Number(thaiDateMatch[3]);
+  const date = new Date(value);
 
-    if (year > 2400) year -= 543;
-
-    return new Date(year, month - 1, day);
-  }
-
-  const date = new Date(text);
-
-  if (Number.isNaN(date.getTime())) return undefined;
-
-  return date;
+  return [
+    date.getUTCFullYear(),
+    String(date.getUTCMonth() + 1).padStart(2, "0"),
+    String(date.getUTCDate()).padStart(2, "0"),
+  ].join("-");
 };
 
-const startOfDay = (date: Date) => {
-  const value = new Date(date);
-  value.setHours(0, 0, 0, 0);
-  return value;
-};
-
-const calculateDelayDays = (dchdate: Date) => {
-  const dischargeDate = startOfDay(dchdate);
-  const today = startOfDay(new Date());
-
-  // กำหนดครบกำหนด = วันที่จำหน่าย + 7 วัน
-  // ถ้า dchdate + 7 คือวันที่ 8 จะยังไม่นับว่าล่าช้า
-  // เริ่มนับล่าช้าวันถัดไป เช่น วันที่ 9 = ล่าช้า 1 วัน
-  const dueDate = new Date(dischargeDate);
-  dueDate.setDate(dueDate.getDate() + 7);
-
-  const diffDays = Math.floor(
-    (today.getTime() - dueDate.getTime()) / (1000 * 60 * 60 * 24),
-  );
-
-  return Math.max(diffDays, 0);
-};
-
-const normalizeStatus = (status: ImportRow["status_chart"]) => {
-  const value = String(status || "WARNING").toLowerCase();
-  return value === "success" ? "SUCCESS" : "WARNING";
-};
-
-const mapExcelRowToData = (row: ExcelRow) => {
-  const regdate = parseDateValue(
-    getValue(row, [
-      "regdate",
-      "admit_date",
-      "admit",
-      "วันที่เข้ารับบริการ",
-      "วัน admit",
-    ]),
-  );
-
-  const dchdate = parseDateValue(
-    getValue(row, [
-      "dchdate",
-      "discharge_date",
-      "discharge",
-      "วันที่จำหน่าย",
-      "วัน discharge",
-    ]),
-  );
-
-  const rawNumDate = getValue(row, [
-    "num_date",
-    "delay_days",
-    "จำนวนวัน",
-    "จำนวนวันล่าช้า",
-  ]);
-  const parsedNumDate =
-    rawNumDate === undefined ||
-    rawNumDate === null ||
-    String(rawNumDate).trim() === ""
-      ? undefined
-      : Number(rawNumDate);
-
-  const data = {
-    hn: toStringValue(getValue(row, ["hn", "HN"])),
-    an: toStringValue(getValue(row, ["an", "AN"])),
-    fullname: toStringValue(
-      getValue(row, ["fullname", "name", "ชื่อ-สกุล", "ชื่อ สกุล"]),
-    ),
-    regdate,
-    dchdate,
-    doctor_code: toStringValue(
-      getValue(row, ["doctor_code", "doctorId", "doctor_id", "รหัสแพทย์"]),
-    ),
-    ward_name: toStringValue(
-      getValue(row, ["ward_name", "ward", "wardName", "หอผู้ป่วย", "วอร์ด"]),
-    ),
-    num_date: Number.isFinite(parsedNumDate) ? parsedNumDate : undefined,
-    status_chart:
-      toStringValue(getValue(row, ["status_chart", "status", "สถานะ"])) ||
-      "WARNING",
-  };
-
-  return data;
+const isSameDate = (
+  firstDate: Date | null | undefined,
+  secondDate: Date | null | undefined,
+) => {
+  return toDateKey(firstDate) === toDateKey(secondDate);
 };
 
 export const POST = withAdmin(async (req: Request) => {
-  try {
-    const formData = await req.formData();
-    const file = formData.get("file");
+  const formData = await req.formData();
+  const file = formData.get("file") as File | null;
 
-    if (!file || !(file instanceof File)) {
-      return NextResponse.json(
-        { message: "กรุณาอัปโหลดไฟล์ Excel" },
-        { status: 400 },
-      );
-    }
+  if (!file) {
+    return NextResponse.json({ message: "No file provided" }, { status: 400 });
+  }
 
-    if (file.size > MAX_FILE_SIZE) {
-      return NextResponse.json(
-        { message: "ไฟล์ต้องมีขนาดไม่เกิน 10MB" },
-        { status: 400 },
-      );
-    }
+  if (file.size > MAX_FILE_SIZE) {
+    return NextResponse.json({ message: "File too large" }, { status: 400 });
+  }
 
-    const fileName = file.name.toLowerCase();
-    const isExcel = fileName.endsWith(".xlsx") || fileName.endsWith(".xls");
+  const arrayBuffer = await file.arrayBuffer();
 
-    if (!isExcel) {
-      return NextResponse.json(
-        { message: "รองรับเฉพาะไฟล์ .xlsx หรือ .xls เท่านั้น" },
-        { status: 400 },
-      );
-    }
+  const workbook = XLSX.read(arrayBuffer, {
+    type: "array",
+    cellDates: true,
+  });
 
-    const arrayBuffer = await file.arrayBuffer();
-    const workbook = XLSX.read(arrayBuffer, {
-      type: "array",
-      cellDates: true,
-    });
+  const sheetName = workbook.SheetNames[0];
 
-    const firstSheetName = workbook.SheetNames[0];
-
-    if (!firstSheetName) {
-      return NextResponse.json(
-        { message: "ไม่พบ Sheet ในไฟล์ Excel" },
-        { status: 400 },
-      );
-    }
-
-    const worksheet = workbook.Sheets[firstSheetName];
-    const rows = XLSX.utils.sheet_to_json<ExcelRow>(worksheet, {
-      defval: "",
-      raw: true,
-    });
-
-    if (rows.length === 0) {
-      return NextResponse.json(
-        { message: "ไม่พบข้อมูลในไฟล์ Excel" },
-        { status: 400 },
-      );
-    }
-
-    const errors: string[] = [];
-    let inserted = 0;
-    let updated = 0;
-    let skipped = 0;
-
-    const doctorCodes = [
-      ...new Set(
-        rows
-          .map((row) =>
-            toStringValue(
-              getValue(row, [
-                "doctor_code",
-                "doctorId",
-                "doctor_id",
-                "รหัสแพทย์",
-              ]),
-            ),
-          )
-          .filter(Boolean),
-      ),
-    ];
-
-    const doctors = await prisma.doctor.findMany({
-      where: {
-        doctorId: {
-          in: doctorCodes,
-        },
-      },
-      select: {
-        doctorId: true,
-      },
-    });
-
-    const doctorCodeSet = new Set(doctors.map((doctor) => doctor.doctorId));
-
-    // ดึง AN ที่มีอยู่แล้วในระบบไว้ก่อน
-    // ถ้า Excel มี AN ตรงกับข้อมูลเดิม จะ update แทน create
-    const ans = [
-      ...new Set(
-        rows
-          .map((row) => toStringValue(getValue(row, ["an", "AN"])))
-          .filter(Boolean),
-      ),
-    ];
-
-    const existingCharts = await prisma.medical_chart.findMany({
-      where: {
-        an: {
-          in: ans,
-        },
-      },
-      select: {
-        id: true,
-        an: true,
-      },
-    });
-
-    const existingChartMap = new Map(
-      existingCharts.map((chart) => [chart.an, chart]),
-    );
-
-    for (let index = 0; index < rows.length; index += 1) {
-      const rowNumber = index + 2; // header อยู่แถวที่ 1
-      const rawData = mapExcelRowToData(rows[index]);
-
-      const parsed = rowSchema.safeParse(rawData);
-
-      if (!parsed.success) {
-        skipped += 1;
-        const messages = parsed.error.issues
-          .map((issue) => issue.message)
-          .join(", ");
-        errors.push(`แถว ${rowNumber}: ${messages}`);
-        continue;
-      }
-
-      const data = parsed.data;
-
-      if (!doctorCodeSet.has(data.doctor_code)) {
-        skipped += 1;
-        errors.push(
-          `แถว ${rowNumber}: ไม่พบรหัสแพทย์ ${data.doctor_code} ในระบบ`,
-        );
-        continue;
-      }
-
-      const numDate = calculateDelayDays(data.dchdate);
-
-      const statusChart = normalizeStatus(data.status_chart);
-
-      const existingChart = existingChartMap.get(data.an);
-
-      if (existingChart) {
-        await prisma.medical_chart.update({
-          where: {
-            id: existingChart.id,
-          },
-          data: {
-            hn: data.hn,
-            an: data.an,
-            fullname: data.fullname,
-            regdate: data.regdate,
-            dchdate: data.dchdate,
-            doctor_code: data.doctor_code,
-            ward_name: data.ward_name,
-            num_date: numDate,
-            status_chart: statusChart,
-          },
-        });
-
-        updated += 1;
-      } else {
-        const createdChart = await prisma.medical_chart.create({
-          data: {
-            hn: data.hn,
-            an: data.an,
-            fullname: data.fullname,
-            regdate: data.regdate,
-            dchdate: data.dchdate,
-            doctor_code: data.doctor_code,
-            ward_name: data.ward_name,
-            num_date: numDate,
-            status_chart: statusChart,
-          },
-        });
-
-        inserted += 1;
-
-        // กันกรณีในไฟล์ Excel มี AN ซ้ำกันเอง
-        // แถวถัดไปที่ AN เดียวกันจะกลายเป็น update
-        existingChartMap.set(data.an, {
-          id: createdChart.id,
-          an: createdChart.an,
-        });
-      }
-    }
-
-    return NextResponse.json({
-      message: "นำเข้าข้อมูลสำเร็จ",
-      total: rows.length,
-      inserted,
-      updated,
-      skipped,
-      errors,
-    });
-  } catch (error) {
-    console.error("IMPORT MEDICAL CHART ERROR:", error);
-
+  if (!sheetName) {
     return NextResponse.json(
-      { message: "เกิดข้อผิดพลาดระหว่างนำเข้าไฟล์" },
-      { status: 500 },
+      { message: "ไม่พบ sheet ในไฟล์ Excel" },
+      { status: 400 },
     );
   }
+
+  const sheet = workbook.Sheets[sheetName];
+
+  const rawData: ExcelRow[] = XLSX.utils.sheet_to_json(sheet, {
+    defval: "",
+    raw: false,
+    dateNF: "dd/mm/yyyy",
+  });
+
+  let created = 0;
+  let updated = 0;
+  let unchanged = 0;
+  let skipped = 0;
+  let failed = 0;
+
+  const errors: ImportError[] = [];
+  const warnings: ImportWarning[] = [];
+
+  for (const [index, row] of rawData.entries()) {
+    const excelRowNumber = index + 2;
+
+    const normalizedRow: Record<string, unknown> = {};
+
+    Object.entries(row).forEach(([key, value]) => {
+      normalizedRow[normalizeKey(key)] = value;
+    });
+
+    const an = toCleanString(
+      getCell(normalizedRow, ["an", "AN", "เลข AN", "เลขที่ AN"]),
+    );
+
+    const hn = toCleanString(
+      getCell(normalizedRow, ["hn", "HN", "เลข HN", "เลขที่ HN"]),
+    );
+
+    try {
+      const mappedRow = {
+        hn,
+        an,
+        fullname: toCleanString(
+          getCell(normalizedRow, [
+            "fullname",
+            "full_name",
+            "patient_name",
+            "pt_name",
+            "name",
+            "ชื่อ-สกุล",
+            "ชื่อสกุล",
+            "ชื่อ_สกุล",
+            "ชื่อ",
+          ]),
+        ),
+        regdate: convertBuddhistToGregorian(
+          getCell(normalizedRow, [
+            "regdate",
+            "reg_date",
+            "admit_date",
+            "admdate",
+            "วันที่รับไว้",
+            "วันที่_admit",
+            "วันที่เข้ารับการรักษา",
+          ]),
+        ),
+        dchdate: convertBuddhistToGregorian(
+          getCell(normalizedRow, [
+            "dchdate",
+            "dch_date",
+            "discharge_date",
+            "วันที่จำหน่าย",
+            "วันที่_discharge",
+            "วันที่ออก",
+          ]),
+        ),
+        doctor_code: toCleanString(
+          getCell(normalizedRow, [
+            "doctor_code",
+            "doctor",
+            "dr_code",
+            "รหัสแพทย์",
+            "แพทย์",
+          ]),
+        ),
+        ward_name: toCleanString(
+          getCell(normalizedRow, [
+            "ward_name",
+            "ward",
+            "wardname",
+            "หอผู้ป่วย",
+            "วอร์ด",
+          ]),
+        ),
+        status_chart: toCleanString(
+          getCell(normalizedRow, [
+            "status_chart",
+            "status",
+            "สถานะ",
+            "สถานะชาร์ต",
+          ]),
+        ),
+      };
+
+      if (!mappedRow.hn && !mappedRow.an) {
+        continue;
+      }
+
+      const status = String(mappedRow.status_chart || "WARNING").toUpperCase();
+
+      const data: ImportRow = rowSchema.parse({
+        ...mappedRow,
+        status_chart: status === "SUCCESS" ? "SUCCESS" : "WARNING",
+      });
+
+      const today = new Date();
+      const dchdate = normalizeDate(data.dchdate);
+      const diffDays = Math.floor(
+        (today.getTime() - data.dchdate.getTime()) / (1000 * 60 * 60 * 24),
+      );
+
+      const num_date = diffDays >= 7 ? Math.floor((diffDays - 7) / 8) + 1 : 0;
+
+      const now = new Date();
+
+      const chartData = {
+        hn: data.hn,
+        fullname: data.fullname,
+        regdate: data.regdate,
+        dchdate: data.dchdate,
+        doctor_code: data.doctor_code,
+        ward_name: data.ward_name,
+        num_date,
+        status_chart: data.status_chart,
+        updated_at: now,
+      };
+
+      // ใช้ findFirst เพราะ DB ปัจจุบันยังไม่มี unique index ที่ an
+      const existing = await prisma.medical_chart.findFirst({
+        where: {
+          an: data.an,
+        },
+        select: {
+          id: true,
+          hn: true,
+          fullname: true,
+          regdate: true,
+          dchdate: true,
+          doctor_code: true,
+          ward_name: true,
+          num_date: true,
+          status_chart: true,
+        },
+      });
+
+      if (existing) {
+        const hasChanged =
+          (existing.hn ?? "") !== chartData.hn ||
+          (existing.fullname ?? "") !== chartData.fullname ||
+          !isSameDate(existing.regdate, chartData.regdate) ||
+          !isSameDate(existing.dchdate, chartData.dchdate) ||
+          (existing.doctor_code ?? "") !== chartData.doctor_code ||
+          (existing.ward_name ?? "") !== chartData.ward_name ||
+          existing.num_date !== chartData.num_date ||
+          existing.status_chart !== chartData.status_chart;
+
+        if (hasChanged) {
+          await prisma.medical_chart.update({
+            where: {
+              id: existing.id,
+            },
+            data: chartData,
+          });
+
+          updated += 1;
+        } else {
+          unchanged += 1;
+        }
+      } else {
+        await prisma.medical_chart.create({
+          data: {
+            an: data.an,
+            ...chartData,
+            created_at: now,
+          },
+        });
+
+        created += 1;
+      }
+    } catch (error: unknown) {
+      failed += 1;
+
+      const message = getImportMessage(error);
+
+      console.error(
+        `Error importing row=${excelRowNumber}, AN=${an || "N/A"}, HN=${hn || "N/A"}:`,
+        error,
+      );
+
+      errors.push({
+        row: excelRowNumber,
+        an,
+        hn,
+        message,
+      });
+    }
+  }
+
+  const total = created + updated + unchanged + skipped + failed;
+  const success = created + updated + unchanged;
+
+  return NextResponse.json({
+    message: `Import completed. Created: ${created}, Updated: ${updated}, Unchanged: ${unchanged}, Skipped: ${skipped}, Failed: ${failed}`,
+    summary: {
+      total,
+      created,
+      updated,
+      unchanged,
+      skipped,
+      failed,
+      success,
+    },
+    warnings,
+    errors,
+  });
 });

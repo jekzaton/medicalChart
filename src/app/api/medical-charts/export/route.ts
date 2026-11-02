@@ -13,7 +13,7 @@ const allowedSortFields = [
   "dchdate",
   "doctor_code",
   "ward_name",
-  "num_date",
+  // "num_date",
   "status_chart",
   "created_at",
   "updated_at",
@@ -195,7 +195,7 @@ export const GET = withAdmin(async (req: Request) => {
         รหัสแพทย์: chart.doctor_code,
         ชื่อแพทย์: doctor?.name || "",
         เลขใบประกอบวิชาชีพ: doctor?.license || "",
-        จำนวนวันล่าช้า: chart.num_date,
+        // จำนวนวันล่าช้า: chart.num_date,
         สถานะ: getStatusLabel(String(chart.status_chart)),
       };
     });

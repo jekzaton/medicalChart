@@ -119,11 +119,13 @@ export default function DoctorChartCM() {
 
   const [dchdateFrom, setDchdateFrom] = useState("");
   const [dchdateTo, setDchdateTo] = useState("");
-  const [search, setSearch] = useState("");
 
   const [appliedDchdateFrom, setAppliedDchdateFrom] = useState("");
   const [appliedDchdateTo, setAppliedDchdateTo] = useState("");
+  const [search, setSearch] = useState("");
   const [appliedSearch, setAppliedSearch] = useState("");
+  const [searchDoctorInput, setSearchDoctorInput] = useState("");
+  const [appliedSearchDoctor, setAppliedSearchDoctor] = useState("");
   const [hasSearched, setHasSearched] = useState(false);
 
   const [currentPage, setCurrentPage] = useState(1);
@@ -148,17 +150,15 @@ export default function DoctorChartCM() {
     }
   };
 
-  const handleSearch = () => {
-    const nextSearch = search.trim();
-
+  const handleSearchDoctor = () => {
     if (dchdateFrom && dchdateTo && dchdateFrom > dchdateTo) {
-      toast.warning("วันที่เริ่มต้นต้องไม่มากกว่าวันที่สิ้นสุด");
+      toast.warning("วันที่เริ่มต้นต้องไม่มากกว่าวันสิ้นสุด");
       return;
     }
 
     setAppliedDchdateFrom(dchdateFrom);
     setAppliedDchdateTo(dchdateTo);
-    setAppliedSearch(nextSearch);
+    setAppliedSearchDoctor(searchDoctorInput.trim());
     setCurrentPage(1);
     setHasSearched(true);
   };
@@ -183,7 +183,7 @@ export default function DoctorChartCM() {
         pageSize,
         appliedDchdateFrom,
         appliedDchdateTo,
-        appliedSearch,
+        appliedSearchDoctor,
       ],
       enabled: hasSearched,
       queryFn: async () => {
@@ -191,15 +191,12 @@ export default function DoctorChartCM() {
           params: {
             page: currentPage,
             limit: pageSize,
-            search: appliedSearch,
+            searchDoctor: appliedSearchDoctor,
             dchdateFrom: appliedDchdateFrom,
             dchdateTo: appliedDchdateTo,
           },
-          headers: {
-            "Cache-Control": "no-cache",
-          },
+          headers: { "Cache-Control": "no-cache" },
         });
-
         return res.data;
       },
       placeholderData: keepPreviousData,
@@ -307,10 +304,10 @@ export default function DoctorChartCM() {
                   <div className="relative">
                     <Search className="pointer-events-none absolute top-1/2 left-4 h-4 w-4 -translate-y-1/2 text-white/70" />
                     <input
-                      value={search}
-                      onChange={(event) => setSearch(event.target.value)}
-                      onKeyDown={(event) => {
-                        if (event.key === "Enter") handleSearch();
+                      value={searchDoctorInput}
+                      onChange={(e) => setSearchDoctorInput(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") handleSearchDoctor(); // เรียกตอน Enter
                       }}
                       placeholder="ค้นหาชื่อแพทย์ / รหัสแพทย์ / License"
                       className="h-11 w-full rounded-2xl border border-white/20 bg-white/15 px-4 pl-11 text-sm font-bold text-white backdrop-blur transition outline-none placeholder:text-white/60 focus:border-white/60 focus:ring-4 focus:ring-white/10 dark:bg-slate-950/30"
@@ -319,7 +316,7 @@ export default function DoctorChartCM() {
 
                   <button
                     type="button"
-                    onClick={handleSearch}
+                    onClick={handleSearchDoctor}
                     className="inline-flex h-11 items-center justify-center gap-2 rounded-2xl bg-white px-4 text-sm font-black text-blue-700 shadow-lg shadow-black/10 transition hover:-translate-y-0.5 hover:bg-blue-50 dark:bg-slate-950/90 dark:text-blue-300 dark:hover:bg-slate-900"
                   >
                     <Search size={16} />
@@ -780,13 +777,13 @@ function Pagination({
 
       <div className="flex flex-wrap items-center justify-center gap-2">
         <PaginationButton
-          label="หน้าแรก"
+          label=""
           icon={<ChevronsLeft size={16} />}
           disabled={isFirstPage}
           onClick={() => onPageChange(1)}
         />
         <PaginationButton
-          label="ก่อนหน้า"
+          label=""
           icon={<ChevronLeft size={16} />}
           disabled={isFirstPage}
           onClick={() => onPageChange(Math.max(currentPage - 1, 1))}
@@ -810,14 +807,14 @@ function Pagination({
         </div>
 
         <PaginationButton
-          label="ถัดไป"
+          label=""
           icon={<ChevronRight size={16} />}
           iconRight
           disabled={isLastPage}
           onClick={() => onPageChange(Math.min(currentPage + 1, totalPages))}
         />
         <PaginationButton
-          label="หน้าสุดท้าย"
+          label=""
           icon={<ChevronsRight size={16} />}
           iconRight
           disabled={isLastPage}

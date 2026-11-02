@@ -18,13 +18,35 @@ import {
   X,
 } from "lucide-react";
 
+type ImportError = {
+  row: number;
+  an?: string;
+  hn?: string;
+  message: string;
+};
+
+type ImportSummary = {
+  total: number;
+  created: number;
+  updated: number;
+  unchanged: number;
+  skipped: number;
+  failed: number;
+  success: number;
+};
+
+type ImportNotice = {
+  row: number;
+  an?: string;
+  hn?: string;
+  message: string;
+};
+
 type ImportResult = {
   message?: string;
-  total?: number;
-  inserted?: number;
-  updated?: number;
-  skipped?: number;
-  errors?: string[];
+  summary?: ImportSummary;
+  warnings?: ImportNotice[];
+  errors?: ImportNotice[];
 };
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
@@ -109,31 +131,36 @@ export default function ImportMedicalChart() {
       const formData = new FormData();
       formData.append("file", file);
 
-      const res = await axios.post(IMPORT_ENDPOINT, formData, {
-        headers: {
-          "Content-Type": "multipart/form-data",
-        },
+      const res = await axios.post<ImportResult>(IMPORT_ENDPOINT, formData, {
         validateStatus: () => true,
+        withCredentials: true,
       });
 
       if (res.status >= 400) {
         const message = res.data?.message || "นำเข้าข้อมูลไม่สำเร็จ";
+
         setResult({
           message,
-          errors: res.data?.errors || [],
+          summary: res.data?.summary,
+          errors: Array.isArray(res.data?.errors) ? res.data.errors : [],
         });
+
         toast.error(message);
         return;
       }
 
-      const importResult = res.data || {};
+      const importResult: ImportResult = res.data ?? {};
+
       setResult(importResult);
       toast.success(importResult.message || "นำเข้าข้อมูลสำเร็จ 🎉");
     } catch (err) {
       console.error(err);
+
       toast.error("เกิดข้อผิดพลาดระหว่างนำเข้าไฟล์");
+
       setResult({
         message: "เกิดข้อผิดพลาดระหว่างนำเข้าไฟล์",
+        errors: [],
       });
     } finally {
       setUploading(false);
@@ -323,7 +350,6 @@ export default function ImportMedicalChart() {
                     "regdate",
                     "dchdate",
                     "doctor_code",
-                    "num_date",
                     "ward_name",
                     "status_chart",
                   ].map((item) => (
@@ -348,7 +374,6 @@ export default function ImportMedicalChart() {
                   <li>• doctor_code ต้องตรงกับรหัสแพทย์ในระบบ</li>
                   <li>• ward_name ต้องตรงกับ ward</li>
                   <li>• status_chart ใช้ค่า success หรือ warning</li>
-                  <li>• num_date ถ้าไม่ระบุ ระบบควรตั้งค่าเป็น 0</li>
                 </ul>
               </div>
 
@@ -358,10 +383,12 @@ export default function ImportMedicalChart() {
                     <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-100 text-emerald-600 dark:bg-emerald-500/15 dark:text-emerald-300">
                       <CheckCircle2 size={20} />
                     </div>
-                    <div>
+
+                    <div className="min-w-0">
                       <h3 className="font-semibold text-slate-800 dark:text-slate-100">
                         ผลการ Import
                       </h3>
+
                       <p className="text-xs text-slate-500 dark:text-slate-400">
                         {result.message || "สรุปผลการนำเข้า"}
                       </p>
@@ -369,18 +396,70 @@ export default function ImportMedicalChart() {
                   </div>
 
                   <div className="grid grid-cols-2 gap-3">
-                    <ResultBox label="ทั้งหมด" value={result.total} />
-                    <ResultBox label="เพิ่มใหม่" value={result.inserted} />
-                    <ResultBox label="อัปเดต" value={result.updated} />
-                    <ResultBox label="ข้าม" value={result.skipped} />
+                    <ResultBox
+                      label="แถวทั้งหมด"
+                      value={result.summary?.total}
+                    />
+
+                    <ResultBox
+                      label="นำเข้าสำเร็จ"
+                      value={result.summary?.success}
+                    />
+
+                    <ResultBox
+                      label="เพิ่มใหม่"
+                      value={result.summary?.created}
+                    />
+
+                    <ResultBox
+                      label="อัปเดตข้อมูล"
+                      value={result.summary?.updated}
+                    />
+
+                    <ResultBox
+                      label="ข้ามแถว"
+                      value={result.summary?.skipped}
+                    />
+
+                    <ResultBox label="ผิดพลาด" value={result.summary?.failed} />
+                    <ResultBox
+                      label="ข้อมูลเดิม"
+                      value={result.summary?.unchanged}
+                    />
                   </div>
 
                   {result.errors && result.errors.length > 0 && (
                     <div className="mt-4 rounded-2xl border border-red-100 bg-red-50 p-3 text-sm text-red-600 dark:border-red-500/20 dark:bg-red-500/10 dark:text-red-300">
-                      <p className="mb-2 font-semibold">รายการที่มีปัญหา</p>
-                      <ul className="max-h-32 space-y-1 overflow-y-auto text-xs">
+                      <p className="mb-2 font-semibold">
+                        รายการที่มีปัญหา ({result.errors.length})
+                      </p>
+
+                      <ul className="max-h-52 space-y-2 overflow-y-auto text-xs">
                         {result.errors.map((error, index) => (
-                          <li key={`${error}-${index}`}>• {error}</li>
+                          <li
+                            key={`${error.row}-${error.an ?? error.hn ?? index}`}
+                            className="rounded-xl border border-red-100 bg-white/70 p-2 dark:border-red-500/20 dark:bg-slate-900/40"
+                          >
+                            <div className="flex flex-wrap gap-x-3 gap-y-1">
+                              <span className="font-semibold">
+                                แถวที่ {error.row}
+                              </span>
+
+                              {error.an && (
+                                <span className="text-slate-600 dark:text-slate-300">
+                                  AN: {error.an}
+                                </span>
+                              )}
+
+                              {error.hn && (
+                                <span className="text-slate-600 dark:text-slate-300">
+                                  HN: {error.hn}
+                                </span>
+                              )}
+                            </div>
+
+                            <p className="mt-1">{error.message}</p>
+                          </li>
                         ))}
                       </ul>
                     </div>
@@ -388,7 +467,7 @@ export default function ImportMedicalChart() {
 
                   <button
                     type="button"
-                    onClick={() => router.push("/admin/medical-charts")}
+                    onClick={() => router.push("/admin/medical-chart")}
                     className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-blue-600 px-4 py-3 text-sm font-semibold text-white transition hover:bg-blue-700"
                   >
                     <RefreshCw size={16} />

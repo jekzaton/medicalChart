@@ -11,6 +11,7 @@ import {
   ArrowUp,
   ArrowUpDown,
   CalendarDays,
+  Check,
   CheckCircle2,
   ChevronLeft,
   ChevronRight,
@@ -693,13 +694,20 @@ export default function TableMedicalUser() {
 
                           <td className="px-4 py-4 text-center whitespace-nowrap">
                             <span
-                              className={`inline-flex min-w-16 items-center justify-center rounded-full px-3 py-1 text-xs font-semibold ring-1 ${
-                                Number(chart.num_date) > 0
-                                  ? "bg-amber-100 text-amber-700 ring-amber-200 dark:bg-amber-500/15 dark:text-amber-300 dark:ring-amber-500/20"
-                                  : "bg-slate-100 text-slate-600 ring-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:ring-slate-700"
-                              }`}
+                              className={`inline-flex min-w-[4rem] items-center justify-center rounded-full px-3 py-1 text-xs font-semibold ring-1 transition-all duration-200 ease-in-out ${
+                                chart.status_chart?.toUpperCase() === "SUCCESS"
+                                  ? "bg-green-100 text-green-800 shadow-sm ring-green-200 dark:bg-green-500/15 dark:text-green-300 dark:ring-green-500/20"
+                                  : Number(chart.num_date) > 0
+                                    ? "bg-amber-100 text-amber-700 shadow-sm ring-amber-200 dark:bg-amber-500/15 dark:text-amber-300 dark:ring-amber-500/20"
+                                    : "bg-slate-100 text-slate-600 ring-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:ring-slate-700"
+                              } `}
                             >
-                              {Number(chart.num_date || 0)} วัน
+                              {chart.status_chart?.toUpperCase() ===
+                              "SUCCESS" ? (
+                                <Check className="h-4 w-4 text-green-600 dark:text-green-400" />
+                              ) : (
+                                `${Number(chart.num_date || 0)} วัน`
+                              )}
                             </span>
                           </td>
 
@@ -718,33 +726,7 @@ export default function TableMedicalUser() {
                                 ? "bg-white dark:bg-slate-900"
                                 : "bg-slate-50 dark:bg-slate-900"
                             }`}
-                          >
-                            {/* <div className="flex items-center justify-center gap-2">
-                              <button
-                                type="button"
-                                onClick={() => handleEdit(chart)}
-                                className="group rounded-xl bg-blue-50 p-2 text-blue-600 shadow-sm transition hover:-translate-y-0.5 hover:bg-blue-100 hover:shadow dark:bg-blue-500/10 dark:text-blue-300 dark:hover:bg-blue-500/20"
-                                title="แก้ไขข้อมูล"
-                              >
-                                <Pencil
-                                  size={16}
-                                  className="transition group-hover:scale-110"
-                                />
-                              </button>
-
-                              <button
-                                type="button"
-                                onClick={() => setDeleteTarget(chart)}
-                                className="group rounded-xl bg-red-50 p-2 text-red-600 shadow-sm transition hover:-translate-y-0.5 hover:bg-red-100 hover:shadow dark:bg-red-500/10 dark:text-red-300 dark:hover:bg-red-500/20"
-                                title="ลบข้อมูล"
-                              >
-                                <Trash2
-                                  size={16}
-                                  className="transition group-hover:scale-110"
-                                />
-                              </button>
-                            </div> */}
-                          </td>
+                          ></td>
                         </tr>
                       );
                     })}

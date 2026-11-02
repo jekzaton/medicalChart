@@ -38,11 +38,8 @@ export const POST = withAdmin(async (req: Request) => {
 
     if (!result.success) {
       return NextResponse.json(
-        {
-          message: "ข้อมูลไม่ถูกต้อง",
-          errors: result.error.flatten(),
-        },
-        { status: 400 },
+        { message: "ข้อมูลไม่ถูกต้อง", errors: result.error.flatten() },
+        { status: 400 }
       );
     }
 
@@ -56,23 +53,14 @@ export const POST = withAdmin(async (req: Request) => {
           { license: data.license },
         ],
       },
-      select: {
-        doctorId: true,
-        cid: true,
-        license: true,
-      },
+      select: { doctorId: true, cid: true, license: true },
     });
 
     if (duplicateDoctor) {
       let message = "ข้อมูลแพทย์มีในระบบแล้ว";
-
-      if (duplicateDoctor.doctorId === data.doctorId) {
-        message = "รหัสแพทย์นี้มีในระบบแล้ว";
-      } else if (duplicateDoctor.cid === data.cid) {
-        message = "เลขบัตรประชาชนนี้มีในระบบแล้ว";
-      } else if (duplicateDoctor.license === data.license) {
-        message = "เลขใบประกอบวิชาชีพนี้มีในระบบแล้ว";
-      }
+      if (duplicateDoctor.doctorId === data.doctorId) message = "รหัสแพทย์นี้มีในระบบแล้ว";
+      else if (duplicateDoctor.cid === data.cid) message = "เลขบัตรประชาชนนี้มีในระบบแล้ว";
+      else if (duplicateDoctor.license === data.license) message = "เลขใบประกอบวิชาชีพนี้มีในระบบแล้ว";
 
       return NextResponse.json({ message }, { status: 400 });
     }
@@ -88,32 +76,15 @@ export const POST = withAdmin(async (req: Request) => {
       },
     });
 
-    return NextResponse.json(
-      {
-        message: "สร้างข้อมูลแพทย์สำเร็จ",
-        doctor,
-      },
-      { status: 201 },
-    );
+    return NextResponse.json({ message: "สร้างข้อมูลแพทย์สำเร็จ", doctor }, { status: 201 });
   } catch (error) {
     console.error("POST ERROR Doctor:", error);
 
-    if (
-      error instanceof Prisma.PrismaClientKnownRequestError &&
-      error.code === "P2002"
-    ) {
-      return NextResponse.json(
-        {
-          message: getPrismaUniqueMessage(error.meta?.target),
-        },
-        { status: 400 },
-      );
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
+      return NextResponse.json({ message: getPrismaUniqueMessage(error.meta?.target) }, { status: 400 });
     }
 
-    return NextResponse.json(
-      { message: "server error doctor" },
-      { status: 500 },
-    );
+    return NextResponse.json({ message: "server error doctor" }, { status: 500 });
   }
 });
 
@@ -123,23 +94,20 @@ export const GET = withAdmin(async (req: Request) => {
     const { searchParams } = new URL(req.url);
 
     const page = Math.max(Number(searchParams.get("page")) || 1, 1);
-    const limit = Math.min(
-      Math.max(Number(searchParams.get("limit")) || 10, 1),
-      100,
-    );
+    const limit = Math.min(Math.max(Number(searchParams.get("limit")) || 10, 1), 100);
     const search = (searchParams.get("search") || "").trim();
 
     const skip = (page - 1) * limit;
 
     const where: Prisma.doctorWhereInput = search
       ? {
-          OR: [
-            { cid: { contains: search } },
-            { name: { contains: search } },
-            { doctorId: { contains: search } },
-            { license: { contains: search } },
-          ],
-        }
+        OR: [
+          { cid: { contains: search } },
+          { name: { contains: search } },
+          { doctorId: { contains: search } },
+          { license: { contains: search } },
+        ],
+      }
       : {};
 
     const [total, doctors] = await prisma.$transaction([
@@ -148,27 +116,43 @@ export const GET = withAdmin(async (req: Request) => {
         where,
         skip,
         take: limit,
-        orderBy: {
-          updatedAt: "desc",
-        },
+        orderBy: { updatedAt: "desc" },
       }),
     ]);
 
     return NextResponse.json({
       data: doctors,
-      meta: {
-        total,
-        page,
-        limit,
-        totalPages: Math.max(Math.ceil(total / limit), 1),
-      },
+      meta: { total, page, limit, totalPages: Math.max(Math.ceil(total / limit), 1) },
     });
   } catch (error) {
     console.error("GET ERROR Doctor:", error);
+    return NextResponse.json({ message: "Failed to fetch doctors" }, { status: 500 });
+  }
+});
 
-    return NextResponse.json(
-      { message: "Failed to fetch doctors" },
-      { status: 500 },
-    );
+// PATCH /api/doctors/:id
+export const PATCH = withAdmin(async (req: Request) => {
+  try {
+    const { searchParams } = new URL(req.url);
+    const id = Number(searchParams.get("id"));
+
+    if (!id) return NextResponse.json({ message: "Missing id" }, { status: 400 });
+
+    const body = await req.json();
+    const result = doctorSchema.partial().safeParse(body);
+
+    if (!result.success) return NextResponse.json({ message: "Invalid data", errors: result.error.flatten() }, { status: 400 });
+
+    const data = result.data;
+
+    const doctor = await prisma.doctor.update({
+      where: { id },
+      data,
+    });
+
+    return NextResponse.json({ message: "อัปเดตแพทย์สำเร็จ", doctor });
+  } catch (error) {
+    console.error("PATCH ERROR Doctor:", error);
+    return NextResponse.json({ message: "server error doctor" }, { status: 500 });
   }
 });
